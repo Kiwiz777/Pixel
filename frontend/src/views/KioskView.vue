@@ -47,12 +47,23 @@ const settings = ref({
   kiosk_bg_media: [],
   kiosk_bg_slideshow_ms: 6000,
   kiosk_bg_dim: 35,
+  capture_aspect: 16 / 9,
 })
 const capture = ref(null)
 const capturing = ref(false)
 const showQuiz = ref(false)
 const rewardSession = ref(null) // reward config applied to the next capture
 const quizAvailable = computed(() => settings.value.quiz_enabled && settings.value.active_quiz_id != null)
+// Width/height of the paper, from Admin. The stage is shaped to match so the
+// guest frames themselves inside exactly what gets printed.
+const captureAspect = computed(() => Number(settings.value.capture_aspect) || 16 / 9)
+// Height drives the box (aspect-ratio derives the width), capped so a portrait
+// stage still fits the screen. min() keeps the ratio exact at any viewport,
+// which is what makes the preview a true preview.
+const stageStyle = computed(() => ({
+  aspectRatio: String(captureAspect.value),
+  width: `min(100%, ${(72 * captureAspect.value).toFixed(2)}vh)`,
+}))
 // Camera intentionally idle (off with no error) — show a welcoming prompt, not a warning.
 const cameraIdle = computed(() => !cam.active.value && !cam.error.value)
 const greeting = ref('')
@@ -139,7 +150,7 @@ async function onboardNewUser(descriptor) {
   // Grab a face snapshot now, while they're framed, for the Admin thumbnail.
   let faceBlob = null
   try {
-    faceBlob = await cam.capture()
+    faceBlob = await cam.capture(0.92, captureAspect.value)
   } catch {
     /* snapshot is best-effort */
   }
@@ -243,7 +254,7 @@ async function doCapture() {
   }
   capturing.value = true
   try {
-    const blob = await cam.capture()
+    const blob = await cam.capture(0.92, captureAspect.value)
     capture.value = await api.capture(blob)
   } catch {
     flashGreeting('Capture failed — try again.')
@@ -362,7 +373,10 @@ onBeforeUnmount(() => {
 
     <!-- video stage -->
     <main class="relative z-10 min-h-dvh grid place-items-center px-4 py-6">
-      <div class="relative w-full max-w-5xl aspect-video rounded-3xl overflow-hidden glass shadow-glass">
+      <div
+        class="relative mx-auto max-w-5xl rounded-3xl overflow-hidden glass shadow-glass"
+        :style="stageStyle"
+      >
         <!-- browser camera feed (mirrored like a selfie) -->
         <video
           :ref="(el) => (cam.videoRef.value = el)"

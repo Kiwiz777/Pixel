@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 import ai_brain
 import database as db
+import image_processor
 from schemas import SettingsUpdate
 from security import require_admin
 
@@ -45,6 +46,10 @@ async def public_settings():
         "multilingual_autodetect": db.get_setting("multilingual_autodetect", True),
         "dev_mode": db.get_setting("dev_mode", False),
         "frame_overlay_path": db.get_setting("frame_overlay_path", ""),
+        # Shape of the print, so the Kiosk viewport and the capture match the
+        # paper exactly (WYSIWYG - nothing is cropped after the shutter).
+        "print_orientation": db.get_setting("print_orientation", "portrait"),
+        "capture_aspect": image_processor.print_aspect(),
         # Kiosk background appearance
         "kiosk_bg_mode": db.get_setting("kiosk_bg_mode", "none"),
         "kiosk_bg_color": db.get_setting("kiosk_bg_color", "#070b16"),

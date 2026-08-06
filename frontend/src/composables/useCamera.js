@@ -55,14 +55,36 @@ export function useCamera() {
     active.value = false
   }
 
-  /** Capture the current frame as a JPEG Blob. */
-  function capture(quality = 0.92) {
+  /**
+   * Capture the current frame as a JPEG Blob.
+   *
+   * `aspect` (width/height) centre-crops the sensor frame to the shape of the
+   * print. Webcam sensors are landscape, so a portrait print needs a crop
+   * somewhere - doing it here, against the same region the preview shows,
+   * means the guest framed themselves for it. Nothing disappears after the
+   * shutter, and the backend then has nothing left to crop.
+   */
+  function capture(quality = 0.92, aspect = null) {
     const v = videoRef.value
     if (!v || !v.videoWidth) return Promise.resolve(null)
+
+    const sw = v.videoWidth
+    const sh = v.videoHeight
+    let cw = sw
+    let ch = sh
+    if (aspect > 0) {
+      if (sw / sh > aspect) cw = Math.round(sh * aspect)
+      else ch = Math.round(sw / aspect)
+    }
+    const sx = Math.round((sw - cw) / 2)
+    const sy = Math.round((sh - ch) / 2)
+
     const canvas = document.createElement('canvas')
-    canvas.width = v.videoWidth
-    canvas.height = v.videoHeight
-    canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height)
+    canvas.width = cw
+    canvas.height = ch
+    // Source rect -> full canvas. Note the preview is mirrored via CSS only;
+    // the capture stays unmirrored so text in the shot reads correctly.
+    canvas.getContext('2d').drawImage(v, sx, sy, cw, ch, 0, 0, cw, ch)
     return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', quality))
   }
 

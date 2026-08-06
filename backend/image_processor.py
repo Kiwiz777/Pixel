@@ -161,6 +161,18 @@ def print_target_px() -> tuple[int, int]:
     return round(w_cm / _CM_PER_INCH * dpi), round(h_cm / _CM_PER_INCH * dpi)
 
 
+def print_aspect() -> float:
+    """
+    Width/height of the print canvas, for the Kiosk viewport.
+
+    The live preview is shaped to this so guests frame themselves inside the
+    region that actually gets printed - the crop happens in front of them,
+    not silently at print time.
+    """
+    w, h = print_target_px()
+    return round(w / h, 4) if h else 1.5
+
+
 def fit_to_print(img: Image.Image) -> Image.Image:
     """
     Reshape a photo to the exact print canvas.
