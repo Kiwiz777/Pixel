@@ -1,0 +1,22 @@
+# Core backend (installs on any OS - Windows dev + Raspberry Pi)
+fastapi>=0.110
+uvicorn>=0.29                     # ASGI server (plain; see note on [standard] below)
+websockets>=12.0                 # WebSocket support for uvicorn (pure-Python wheel)
+pydantic>=2.6
+python-multipart>=0.0.9          # file uploads (frames, faces, audio)
+httpx>=0.27                      # async calls to all AI providers
+Pillow>=10.2                     # image framing / processing
+python-dotenv>=1.0               # .env loading
+cryptography>=42.0               # encrypt API keys at rest (degrades gracefully if absent)
+
+# Note: we use plain `uvicorn` + `websockets` instead of `uvicorn[standard]`
+# because httptools/watchfiles lack prebuilt wheels for 32-bit Python on
+# Windows. On 64-bit Python / the Raspberry Pi you may use uvicorn[standard].
+# If `cryptography` fails to build (32-bit Windows w/o Rust), the app still
+# runs - API keys are simply stored unencrypted until you install it.
+
+# --- Hardware / Pi-only extras (see requirements-pi.txt) ---
+# opencv-python       : webcam capture + streaming
+# face-recognition    : known-face identification (needs dlib/cmake)
+# pycups              : native CUPS bindings (needs libcups2-dev)
+# These are optional; the backend degrades gracefully without them.

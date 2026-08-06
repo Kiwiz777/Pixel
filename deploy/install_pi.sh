@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+#
+# install_pi.sh - install a compiled build onto a Raspberry Pi.
+#
+# Run ON THE PI, as root, with a build/run.dist produced by backend/build_pi.sh.
+#
+#   sudo ./deploy/install_pi.sh backend/build/run.dist
+#
+set -euo pipefail
+
+DIST="${1:-backend/build/run.dist}"
+APP_DIR=/opt/pixel
+STATE_DIR=/var/lib/pixel
+ENV_FILE=/etc/pixel/pixel.env
+
+[ "$(id -u)" -eq 0 ] || { echo "!! must run as root" >&2; exit 1; }
+[ -x "$DIST/pixel" ] || { echo "!! no binary at $DIST/pixel" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# 1. Service account. No login shell, no home - it only runs the binary.
+# ---------------------------------------------------------------------------
+if ! id pixel >/dev/null 2>&1; then
+  echo "==> Creating 'pixel' service user"
+  useradd --system --no-create-home --shell /usr/sbin/nologin pixel
+fi
+usermod -aG video,lp pixel
+
+# ---------------------------------------------------------------------------
+# 2. Optional native extras, in the SYSTEM python (deliberately not bundled).
+#    Skipped if already present - the app degrades gracefully without them.
+# ---------------------------------------------------------------------------
+echo "==> Ensuring optional hardware libs"
+apt-get update -qq
+apt-get install -y --no-install-recommends \
+  python3-opencv python3-numpy cups cups-client libcups2-dev >/dev/null
+python3 -c 'import cups' 2>/dev/null || pip3 install --break-system-packages pycups
+
+# ---------------------------------------------------------------------------
+# 3. Application bundle -> read-only, owned by root. The service user can
+#    execute it but never modify it.
+# ---------------------------------------------------------------------------
+echo "==> Installing bundle to $APP_DIR"
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR"
+cp -a "$DIST/." "$APP_DIR/"
+chown -R root:root "$APP_DIR"
+chmod -R a-w "$APP_DIR"
+chmod 0755 "$APP_DIR/pixel"
+
+# ---------------------------------------------------------------------------
+# 4. Writable state, owned by the service user.
+# ---------------------------------------------------------------------------
+mkdir -p "$STATE_DIR"
+chown -R pixel:pixel "$STATE_DIR"
+chmod 0700 "$STATE_DIR"
+
+# ---------------------------------------------------------------------------
+# 5. Secrets. Generated once, never baked into the image.
+# ---------------------------------------------------------------------------
+if [ ! -f "$ENV_FILE" ]; then
+  echo "==> Generating $ENV_FILE"
+  mkdir -p "$(dirname "$ENV_FILE")"
+  cat >"$ENV_FILE" <<EOF
+PB_ADMIN_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40)
+PB_SECRET_KEY=$(head -c 48 /dev/urandom | base64 | tr -d '/+=' | head -c 64)
+PB_CORS_ORIGINS=http://localhost:8000
+EOF
+  chown root:root "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  echo "    admin token: $(grep PB_ADMIN_TOKEN "$ENV_FILE" | cut -d= -f2)"
+  echo "    (save it now - the file is root-only from here on)"
+else
+  echo "==> Keeping existing $ENV_FILE"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Service.
+# ---------------------------------------------------------------------------
+echo "==> Installing systemd unit"
+cp "$(dirname "$0")/pixel.service" /etc/systemd/system/pixel.service
+systemctl daemon-reload
+systemctl enable --now pixel
+
+sleep 2
+systemctl --no-pager --lines=15 status pixel || true
+echo
+echo "==> Kiosk: http://$(hostname -I | awk '{print $1}'):8000"

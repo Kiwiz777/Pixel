@@ -1,0 +1,12 @@
+# Hardware extras for the Raspberry Pi deployment.
+# Install AFTER requirements.txt:  pip install -r requirements-pi.txt
+#
+# System packages first (Raspberry Pi OS / Debian):
+#   sudo apt update
+#   sudo apt install -y python3-dev cmake build-essential \
+#        libcups2-dev libatlas-base-dev libopenjp2-7 \
+#        cups cups-client
+#
+opencv-python>=4.9          # webcam capture + JPEG encoding
+face-recognition>=1.3       # face identification (pulls in dlib)
+pycups>=2.0                 # native CUPS bindings

@@ -1,0 +1,146 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Design tokens (Liquid Glass system - playful orange + electric blue) */
+/* ------------------------------------------------------------------ */
+:root {
+  --color-primary: #f97316;
+  --color-secondary: #fb923c;
+  --color-accent: #2563eb;
+  --color-ring: #38bdf8;
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.14);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  @apply font-sans antialiased text-slate-100 bg-ink-950;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Animated aurora backdrop used behind the immersive kiosk. */
+.aurora {
+  background:
+    radial-gradient(60rem 60rem at 12% -10%, rgba(56, 189, 248, 0.18), transparent 55%),
+    radial-gradient(50rem 50rem at 92% 12%, rgba(249, 115, 22, 0.20), transparent 55%),
+    radial-gradient(70rem 70rem at 50% 120%, rgba(37, 99, 235, 0.18), transparent 50%),
+    #070b16;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reusable component classes                                          */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .glass {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    @apply shadow-glass;
+  }
+
+  .glass-card {
+    @apply glass rounded-3xl;
+  }
+
+  /* Buttons -------------------------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-display font-medium
+           rounded-2xl px-5 py-3 transition-all duration-200 cursor-pointer
+           select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-electric-400
+           focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950
+           disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.97];
+    min-height: 44px;
+  }
+  .btn-primary {
+    @apply btn text-ink-950 shadow-glow;
+    background-image: linear-gradient(135deg, #fb923c, #f97316);
+  }
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+  .btn-accent {
+    @apply btn text-white shadow-glow-blue;
+    background-image: linear-gradient(135deg, #38bdf8, #2563eb);
+  }
+  .btn-ghost {
+    @apply btn glass text-slate-100 hover:bg-white/10;
+  }
+  .btn-danger {
+    @apply btn bg-red-600/90 text-white hover:bg-red-600;
+  }
+  .btn-sm {
+    @apply px-3.5 py-2 text-sm rounded-xl;
+    min-height: 38px;
+  }
+
+  /* Form fields ---------------------------------------------------- */
+  .field {
+    @apply w-full rounded-xl bg-ink-850/70 border border-white/10 px-4 py-2.5
+           text-slate-100 placeholder:text-slate-500 transition
+           focus:outline-none focus:border-electric-400/70 focus:ring-2 focus:ring-electric-400/30;
+  }
+  .label {
+    @apply block text-sm font-semibold text-slate-300 mb-1.5;
+  }
+  .hint {
+    @apply text-xs text-slate-400 mt-1;
+  }
+
+  /* Toggle switch -------------------------------------------------- */
+  .switch {
+    @apply relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full
+           border border-white/10 bg-ink-700 transition-colors duration-200;
+  }
+  .switch[data-on='true'] {
+    @apply bg-brand-500 border-brand-400;
+  }
+  .switch-knob {
+    @apply pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full
+           bg-white shadow transition-transform duration-200;
+  }
+  .switch[data-on='true'] .switch-knob {
+    @apply translate-x-5;
+  }
+
+  /* Skeleton shimmer ---------------------------------------------- */
+  .skeleton {
+    @apply relative overflow-hidden bg-white/5 rounded-xl;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    animation: shimmer 1.6s infinite;
+  }
+}
+
+/* Honour OS reduced-motion preference everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Custom scrollbar for the admin panels. */
+.scroll-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}

@@ -1,0 +1,160 @@
+// Thin fetch wrapper. Admin endpoints require a bearer token which we keep in
+// localStorage (entered once on the Admin login gate).
+const ADMIN_TOKEN_KEY = 'pb_admin_token'
+
+export function getAdminToken() {
+  return localStorage.getItem(ADMIN_TOKEN_KEY) || ''
+}
+export function setAdminToken(token) {
+  localStorage.setItem(ADMIN_TOKEN_KEY, token)
+}
+export function clearAdminToken() {
+  localStorage.removeItem(ADMIN_TOKEN_KEY)
+}
+
+async function request(method, path, { body, admin = false, isForm = false } = {}) {
+  const headers = {}
+  if (admin) headers['Authorization'] = `Bearer ${getAdminToken()}`
+  let payload = body
+  if (body && !isForm) {
+    headers['Content-Type'] = 'application/json'
+    payload = JSON.stringify(body)
+  }
+  const res = await fetch(path, { method, headers, body: payload })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      detail = (await res.json()).detail || detail
+    } catch {
+      /* non-json error */
+    }
+    const err = new Error(detail)
+    err.status = res.status
+    throw err
+  }
+  const ct = res.headers.get('content-type') || ''
+  if (ct.includes('application/json')) return res.json()
+  return res
+}
+
+export const api = {
+  get: (p, o) => request('GET', p, o),
+  post: (p, body, o) => request('POST', p, { ...o, body }),
+  put: (p, body, o) => request('PUT', p, { ...o, body }),
+  del: (p, o) => request('DELETE', p, o),
+
+  // Convenience wrappers ------------------------------------------------
+  health: () => request('GET', '/api/health'),
+
+  // Kiosk (public)
+  publicSettings: () => request('GET', '/api/settings/public'),
+  // If `frameBlob` is provided (browser camera), send it; else server grabs.
+  capture: (frameBlob) => {
+    if (!frameBlob) return request('POST', '/api/photobooth/capture')
+    const fd = new FormData()
+    fd.append('frame', frameBlob, 'frame.jpg')
+    return request('POST', '/api/photobooth/capture', { body: fd, isForm: true })
+  },
+  enhance: (capture_id, prompt) =>
+    request('POST', '/api/photobooth/enhance', { body: { capture_id, prompt } }),
+  applyFrame: (capture_id, use_enhanced = true) =>
+    request('POST', '/api/photobooth/frame', { body: { capture_id, use_enhanced } }),
+  print: (capture_id) =>
+    request('POST', '/api/photobooth/print', { body: { capture_id } }),
+  // Public: match a live face descriptor against enrolled users (kiosk).
+  matchFace: (descriptor, peek = false) =>
+    request('POST', '/api/users/match', { body: { descriptor, peek } }),
+  // Public: register a brand-new guest from the onboarding chat (kiosk),
+  // including a face snapshot for the Admin thumbnail.
+  enrollFace: ({ name, bio = '', language = 'en', descriptor, faceBlob = null }) => {
+    const fd = new FormData()
+    fd.append('name', name)
+    fd.append('bio', bio)
+    fd.append('language', language)
+    fd.append('descriptor', JSON.stringify(descriptor))
+    if (faceBlob) fd.append('face', faceBlob, 'snap.jpg')
+    return request('POST', '/api/users/enroll', { body: fd, isForm: true })
+  },
+  // Public: persona-free extraction (e.g. pull a name from a spoken reply).
+  extract: (text, instruction) =>
+    request('POST', '/api/ai/extract', { body: { text, instruction } }),
+  chat: (prompt, history = [], speak = false) =>
+    request('POST', '/api/ai/chat', { body: { prompt, history, speak } }),
+
+  // Quiz (public: kiosk)
+  activeQuiz: () => request('GET', '/api/quiz/active'),
+  submitQuiz: (quiz_id, answers) =>
+    request('POST', '/api/quiz/submit', { body: { quiz_id, answers } }),
+  voucherEmail: (label, code, email) =>
+    request('POST', '/api/quiz/voucher-email', { body: { label, code, email } }),
+  voucherPrint: (label, code) =>
+    request('POST', '/api/quiz/voucher-print', { body: { label, code } }),
+  stt: (blob, language) => {
+    const fd = new FormData()
+    fd.append('file', blob, 'speech.webm')
+    if (language) fd.append('language', language)
+    return request('POST', '/api/ai/stt', { body: fd, isForm: true })
+  },
+
+  // Admin (token-gated)
+  getSettings: () => request('GET', '/api/settings', { admin: true }),
+  saveSettings: (values) => request('PUT', '/api/settings', { body: values, admin: true }),
+  voices: () => request('GET', '/api/settings/voices', { admin: true }),
+  listUsers: () => request('GET', '/api/users', { admin: true }),
+  addUser: (formData) => request('POST', '/api/users', { body: formData, admin: true, isForm: true }),
+  updateUser: (id, body) => request('PUT', `/api/users/${id}`, { body, admin: true }),
+  deleteUser: (id) => request('DELETE', `/api/users/${id}`, { admin: true }),
+  logs: (type, limit = 100) =>
+    request('GET', `/api/logs?${type ? `type=${type}&` : ''}limit=${limit}`, { admin: true }),
+  clearLogs: (type) =>
+    request('DELETE', `/api/logs${type ? `?type=${type}` : ''}`, { admin: true }),
+  printers: () => request('GET', '/api/printer', { admin: true }),
+  printerMedia: (printer) =>
+    request('GET', `/api/printer/media${printer ? `?printer=${encodeURIComponent(printer)}` : ''}`, { admin: true }),
+  setDefaultPrinter: (name) =>
+    request('POST', '/api/printer/default', { body: { name }, admin: true }),
+  updatePrintConfig: (body) =>
+    request('PUT', '/api/printer/config', { body, admin: true }),
+  testPrint: () => request('POST', '/api/printer/test', { admin: true }),
+  uploadFrame: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', '/api/photobooth/frame-overlay', { body: fd, admin: true, isForm: true })
+  },
+  listBackgrounds: () => request('GET', '/api/photobooth/backgrounds', { admin: true }),
+  uploadBackground: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', '/api/photobooth/backgrounds', { body: fd, admin: true, isForm: true })
+  },
+  deleteBackground: (file) =>
+    request('DELETE', `/api/photobooth/backgrounds/${encodeURIComponent(file)}`, { admin: true }),
+
+  // Quiz (admin)
+  listQuizzes: () => request('GET', '/api/quiz', { admin: true }),
+  getQuiz: (id) => request('GET', `/api/quiz/${id}`, { admin: true }),
+  createQuiz: (body) => request('POST', '/api/quiz', { body, admin: true }),
+  updateQuiz: (id, body) => request('PUT', `/api/quiz/${id}`, { body, admin: true }),
+  deleteQuiz: (id) => request('DELETE', `/api/quiz/${id}`, { admin: true }),
+  activateQuiz: (id) => request('POST', `/api/quiz/${id}/activate`, { admin: true }),
+  importQuizCsv: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', `/api/quiz/${id}/import`, { body: fd, admin: true, isForm: true })
+  },
+  exportQuizCsv: async (id) => {
+    const res = await request('GET', `/api/quiz/${id}/export.csv`, { admin: true })
+    return res.text() // request() returns the raw Response for non-JSON bodies
+  },
+  uploadRewardImage: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', '/api/quiz/reward-image', { body: fd, admin: true, isForm: true })
+  },
+}
+
+// Build a ws:// URL from the current origin (works behind the Vite proxy).
+export function wsUrl(path) {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${proto}://${location.host}${path}`
+}

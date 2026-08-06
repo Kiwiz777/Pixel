@@ -1,0 +1,51 @@
+#
+# systemd unit for the compiled Photobooth Robot ("Pixel").
+#
+# Install:  sudo cp deploy/pixel.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now pixel
+#
+[Unit]
+Description=Pixel Photobooth Robot
+After=network-online.target cups.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pixel
+Group=pixel
+# `video` for /dev/video0 (camera), `lp` for CUPS printing.
+SupplementaryGroups=video lp
+
+WorkingDirectory=/opt/pixel
+ExecStart=/opt/pixel/pixel
+
+# State lives OUTSIDE the (read-only) application bundle. Without this the
+# app would try to write into /opt/pixel and fail - see config.py.
+Environment=PB_DATA_DIR=/var/lib/pixel
+Environment=PB_HOST=0.0.0.0
+Environment=PB_PORT=8000
+# The optional native extras (cv2, face_recognition, pycups) are not bundled;
+# they are apt/pip installs in the system Python.
+Environment=PB_EXTRA_SITE_PACKAGES=/usr/lib/python3/dist-packages
+
+# Secrets (PB_ADMIN_TOKEN, PB_SECRET_KEY) are NOT baked into the binary or
+# this unit. Create the file with `chmod 600`, owned by root.
+EnvironmentFile=/etc/pixel/pixel.env
+
+Restart=always
+RestartSec=3
+
+# --- Hardening. The bundle stays read-only; only the state dir is writable.
+StateDirectory=pixel
+StateDirectoryMode=0700
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pixel
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
