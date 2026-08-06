@@ -171,8 +171,9 @@ def update_print_config(*, copies: int | None = None, media: str | None = None,
     if size_cm is not None:
         db.set_setting("print_size_cm", size_cm)
     if orientation is not None:
+        value = str(orientation).lower()
         db.set_setting("print_orientation",
-                       "landscape" if str(orientation).lower() == "landscape" else "portrait")
+                       value if value in ("portrait", "landscape", "auto") else "auto")
     if dpi is not None:
         db.set_setting("print_dpi", max(72, min(600, int(dpi))))
     if fit is not None:
@@ -264,20 +265,25 @@ def print_file(file_path: str | Path, *, printer: str | None = None,
     media = db.get_setting("print_media", "4x6.Borderless")
     color_mode = db.get_setting("print_color_mode", "color")
 
-    # image_processor.prepare_print() has already cropped the photo to exactly
-    # the paper shape, so CUPS must not "helpfully" rotate it. IPP
-    # orientation-requested 3 = portrait / no rotation, 4 = landscape (90 CCW).
-    # Without this, CUPS auto-rotates a landscape image onto portrait paper.
-    landscape = str(db.get_setting("print_orientation", "portrait")).lower() == "landscape"
+    orientation = str(db.get_setting("print_orientation", "auto")).lower()
     options = {
         "copies": str(copies),
         "media": media,
         "ColorModel": "RGB" if color_mode == "color" else "Gray",
-        "orientation-requested": "4" if landscape else "3",
-        # The image already matches the media aspect; scale it to the sheet
-        # rather than letting CUPS letterbox it inside the printable area.
-        "fit-to-page": "true",
     }
+
+    if orientation != "auto":
+        # prepare_print() has already cropped the photo to exactly the paper
+        # shape, so CUPS must not "helpfully" rotate it. IPP
+        # orientation-requested 3 = portrait / no rotation, 4 = landscape.
+        options["orientation-requested"] = "4" if orientation == "landscape" else "3"
+        # The image already matches the media aspect; scale it to the sheet
+        # rather than letting CUPS letterbox it in the printable area.
+        options["fit-to-page"] = "true"
+    # In auto mode we send NO layout options at all, which is exactly what a
+    # bare `lp file` does: CUPS scales the image to the printable area keeping
+    # its aspect ratio, rotating 90 degrees when that fills more paper. That
+    # prints the whole photo uncropped and near full-bleed.
 
     if _PYCUPS and printer:
         conn = cups.Connection()
@@ -286,9 +292,11 @@ def print_file(file_path: str | Path, *, printer: str | None = None,
     elif _HAS_LP and printer:
         cmd = ["lp", "-d", printer, "-n", str(copies),
                "-o", f"media={media}",
-               "-o", f"orientation-requested={options['orientation-requested']}",
-               "-o", "fit-to-page",
-               "-o", f"ColorModel={options['ColorModel']}", str(file_path)]
+               "-o", f"ColorModel={options['ColorModel']}"]
+        if orientation != "auto":
+            cmd += ["-o", f"orientation-requested={options['orientation-requested']}",
+                    "-o", "fit-to-page"]
+        cmd.append(str(file_path))
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if res.returncode != 0:
             raise RuntimeError(f"lp failed: {res.stderr.strip()}")

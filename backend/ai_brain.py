@@ -19,10 +19,12 @@ so the Admin can change provider/keys live with no restart.
 from __future__ import annotations
 
 import base64
+import io
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from PIL import Image
 
 import database as db
 
@@ -273,10 +275,34 @@ async def enhance_image(image_bytes: bytes, prompt: str,
     raise AIError(f"Image provider '{provider}' not implemented.")
 
 
+# Canvases the images/edits endpoint accepts for gpt-image models.
+_GPT_IMAGE_SIZES = ((1024, 1024), (1024, 1536), (1536, 1024))
+
+
+def _openai_image_size(model: str, image_bytes: bytes) -> str:
+    """
+    Pick the output canvas closest to the photo's own shape.
+
+    Hardcoding 1024x1024 squared every photo, so a portrait or widescreen shot
+    came back reshaped and then got cropped again on the way to the printer.
+    Older dall-e edit models only accept square sizes, so they keep it.
+    """
+    if not model.startswith("gpt-image"):
+        return "1024x1024"
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as im:
+            source = im.width / im.height
+    except Exception:
+        return "1024x1024"
+    w, h = min(_GPT_IMAGE_SIZES, key=lambda s: abs(s[0] / s[1] - source))
+    return f"{w}x{h}"
+
+
 async def _enhance_openai(api_key: str, model: str, image_bytes: bytes,
                           prompt: str, mime: str) -> bytes:
     files = {"image": ("photo.png", image_bytes, mime)}
-    data = {"model": model, "prompt": prompt, "size": "1024x1024", "n": "1"}
+    data = {"model": model, "prompt": prompt, "n": "1",
+            "size": _openai_image_size(model, image_bytes)}
     r = await _http().post(
         "https://api.openai.com/v1/images/edits",
         headers={"Authorization": f"Bearer {api_key}"},

@@ -54,15 +54,19 @@ const capturing = ref(false)
 const showQuiz = ref(false)
 const rewardSession = ref(null) // reward config applied to the next capture
 const quizAvailable = computed(() => settings.value.quiz_enabled && settings.value.active_quiz_id != null)
-// Width/height of the paper, from Admin. The stage is shaped to match so the
-// guest frames themselves inside exactly what gets printed.
-const captureAspect = computed(() => Number(settings.value.capture_aspect) || 16 / 9)
+// Width/height of the paper, from Admin. 0 means "auto" - the printer fits and
+// rotates the photo itself, so nothing is cropped and there is no target shape.
+const printAspect = computed(() => Number(settings.value.capture_aspect) || 0)
+// Passed to capture(): null leaves the sensor frame completely untouched.
+const cropAspect = computed(() => printAspect.value || null)
+// Layout only. In auto mode the stage keeps the camera's usual widescreen shape.
+const stageAspect = computed(() => printAspect.value || 16 / 9)
 // Height drives the box (aspect-ratio derives the width), capped so a portrait
 // stage still fits the screen. min() keeps the ratio exact at any viewport,
 // which is what makes the preview a true preview.
 const stageStyle = computed(() => ({
-  aspectRatio: String(captureAspect.value),
-  width: `min(100%, ${(72 * captureAspect.value).toFixed(2)}vh)`,
+  aspectRatio: String(stageAspect.value),
+  width: `min(100%, ${(72 * stageAspect.value).toFixed(2)}vh)`,
 }))
 // Camera intentionally idle (off with no error) — show a welcoming prompt, not a warning.
 const cameraIdle = computed(() => !cam.active.value && !cam.error.value)
@@ -150,7 +154,7 @@ async function onboardNewUser(descriptor) {
   // Grab a face snapshot now, while they're framed, for the Admin thumbnail.
   let faceBlob = null
   try {
-    faceBlob = await cam.capture(0.92, captureAspect.value)
+    faceBlob = await cam.capture(0.92, cropAspect.value)
   } catch {
     /* snapshot is best-effort */
   }
@@ -254,7 +258,7 @@ async function doCapture() {
   }
   capturing.value = true
   try {
-    const blob = await cam.capture(0.92, captureAspect.value)
+    const blob = await cam.capture(0.92, cropAspect.value)
     capture.value = await api.capture(blob)
   } catch {
     flashGreeting('Capture failed — try again.')
@@ -475,6 +479,7 @@ onBeforeUnmount(() => {
       v-if="capture"
       :capture="capture"
       :reward="rewardSession"
+      :aspect="stageAspect"
       @retake="capture = null"
       @close="onCaptureClosed"
       @printed="onCaptureClosed"

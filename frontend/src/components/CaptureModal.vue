@@ -9,6 +9,9 @@ import { api } from '../lib/api'
 const props = defineProps({
   capture: { type: Object, required: true }, // { capture_id, raw_url, ... }
   reward: { type: Object, default: null },   // quiz reward context (optional)
+  // Shape of the print. The review box matches it so the guest sees the photo
+  // at the proportions it will come out of the printer.
+  aspect: { type: Number, default: 16 / 9 },
 })
 const emit = defineEmits(['retake', 'close', 'printed'])
 
@@ -127,7 +130,10 @@ async function printPhoto() {
       </div>
 
       <!-- Photo -->
-      <div class="relative rounded-2xl overflow-hidden bg-ink-900 aspect-[4/3] grid place-items-center">
+      <div
+        class="relative mx-auto rounded-2xl overflow-hidden bg-ink-900 grid place-items-center max-w-full"
+        :style="{ aspectRatio: String(aspect), width: `min(100%, ${(52 * aspect).toFixed(2)}vh)` }"
+      >
         <img :src="shownUrl" alt="Your photo" class="h-full w-full object-contain" />
         <div v-if="busy === 'enhance'" class="absolute inset-0 grid place-items-center bg-ink-950/60">
           <div class="text-center">

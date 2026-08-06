@@ -161,6 +161,11 @@ def print_target_px() -> tuple[int, int]:
     return round(w_cm / _CM_PER_INCH * dpi), round(h_cm / _CM_PER_INCH * dpi)
 
 
+def is_auto_orientation() -> bool:
+    """True when CUPS decides the layout and we send the photo untouched."""
+    return str(db.get_setting("print_orientation", "auto")).lower() == "auto"
+
+
 def print_aspect() -> float:
     """
     Width/height of the print canvas, for the Kiosk viewport.
@@ -168,7 +173,12 @@ def print_aspect() -> float:
     The live preview is shaped to this so guests frame themselves inside the
     region that actually gets printed - the crop happens in front of them,
     not silently at print time.
+
+    Returns 0 in auto mode: nothing is cropped, so the kiosk keeps the
+    camera's own shape and the client falls back to its default.
     """
+    if is_auto_orientation():
+        return 0.0
     w, h = print_target_px()
     return round(w / h, 4) if h else 1.5
 
@@ -218,7 +228,10 @@ def prepare_print(capture_id: str) -> Path:
                 img = bg
             else:
                 img = img.convert("RGB")
-            img = fit_to_print(img)
+            # Auto mode leaves the photo exactly as shot - CUPS scales and
+            # rotates it to the sheet, so cropping here would defeat the point.
+            if not is_auto_orientation():
+                img = fit_to_print(img)
             out = config.CAPTURES_DIR / f"{capture_id}_print.jpg"
             # Embedding DPI matters: without it CUPS guesses 72 and rescales.
             dpi = max(72, int(db.get_setting("print_dpi", 300) or 300))

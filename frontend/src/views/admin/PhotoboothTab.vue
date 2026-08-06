@@ -15,7 +15,7 @@ const form = reactive({
   print_media: '4x6.Borderless',
   print_color_mode: 'color',
   print_size_cm: '10x15',
-  print_orientation: 'portrait',
+  print_orientation: 'auto',
   print_dpi: 300,
   print_fit: 'cover',
 })
@@ -54,7 +54,7 @@ watch(
     form.print_media = s.print_media ?? '4x6.Borderless'
     form.print_color_mode = s.print_color_mode ?? 'color'
     form.print_size_cm = s.print_size_cm ?? '10x15'
-    form.print_orientation = s.print_orientation ?? 'portrait'
+    form.print_orientation = s.print_orientation ?? 'auto'
     form.print_dpi = s.print_dpi ?? 300
     form.print_fit = s.print_fit ?? 'cover'
     framePreview.value = s.frame_overlay_path ? `/media/frames/${s.frame_overlay_path}?t=${Date.now()}` : ''
@@ -258,6 +258,7 @@ onMounted(loadPrinters)
         <div>
           <label class="label" for="orientation">Orientation</label>
           <select id="orientation" v-model="form.print_orientation" class="field">
+            <option value="auto">Auto — never crop</option>
             <option value="portrait">Portrait</option>
             <option value="landscape">Landscape</option>
           </select>
@@ -281,13 +282,20 @@ onMounted(loadPrinters)
       </div>
 
       <p id="fit-hint" class="hint mt-3">
-        Output: <span class="text-slate-200">{{ targetPx }}</span>.
-        <template v-if="form.print_fit === 'cover'">
-          Crop to fill trims the sides of a wide photo — check the camera captures
-          in this shape, or faces near the edge will be cut off.
+        <template v-if="form.print_orientation === 'auto'">
+          The photo is sent exactly as shot and the printer scales it to the sheet,
+          turning it sideways if that fills more paper. Nothing is ever cropped, so
+          Fit and Resolution below don't apply. Frame overlays keep the camera's shape.
         </template>
-        <template v-else>Whole frame kept; unused paper prints white.</template>
-        Frame overlays should match this shape.
+        <template v-else>
+          Output: <span class="text-slate-200">{{ targetPx }}</span>.
+          <template v-if="form.print_fit === 'cover'">
+            Crop to fill trims the sides of a wide photo — the kiosk preview is
+            reshaped to match, so guests frame themselves for it.
+          </template>
+          <template v-else>Whole frame kept; unused paper prints white.</template>
+          Frame overlays should match this shape.
+        </template>
       </p>
 
       <div class="flex flex-wrap gap-3 mt-5">

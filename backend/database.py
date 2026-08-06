@@ -109,7 +109,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # it reaches CUPS - otherwise CUPS auto-rotates a landscape photo onto
     # portrait paper to maximise coverage, which is why prints came out sideways.
     "print_size_cm": "10x15",                     # paper size in cm, order-insensitive
-    "print_orientation": "portrait",              # portrait|landscape
+    # portrait|landscape crop the photo to the paper shape before printing.
+    # "auto" sends the photo untouched and lets CUPS fit + rotate it, which is
+    # what a bare `lp file` does: no crop at all, photo laid whichever way
+    # fills more paper.
+    "print_orientation": "auto",
     "print_dpi": 300,                             # 300 = photo quality
     "print_fit": "cover",                         # cover (crop to fill) | contain (white bars)
 }
