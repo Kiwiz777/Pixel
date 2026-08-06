@@ -80,6 +80,12 @@ export const api = {
     request('POST', '/api/ai/extract', { body: { text, instruction } }),
   chat: (prompt, history = [], speak = false) =>
     request('POST', '/api/ai/chat', { body: { prompt, history, speak } }),
+  // Separate from chat() on purpose: the reply text can be shown while the
+  // audio is still being synthesized, instead of waiting for both.
+  tts: async (text, voice_id) => {
+    const res = await request('POST', '/api/ai/tts', { body: { text, voice_id } })
+    return res.blob()
+  },
 
   // Quiz (public: kiosk)
   activeQuiz: () => request('GET', '/api/quiz/active'),

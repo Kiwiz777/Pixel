@@ -187,6 +187,14 @@ async def extract(text: str, instruction: str) -> str:
     raise AIError(f"Provider '{provider}' not implemented.")
 
 
+def _max_tokens() -> int:
+    """Reply-length cap (Admin-tunable). Bounded so a bad value can't stall a turn."""
+    try:
+        return max(16, min(2048, int(db.get_setting("chat_max_tokens", 120))))
+    except (TypeError, ValueError):
+        return 120
+
+
 async def _chat_openai_compatible(provider: str, api_key: str, model: str,
                                   system_prompt: str, history: list[dict[str, str]],
                                   prompt: str) -> str:
@@ -196,7 +204,8 @@ async def _chat_openai_compatible(provider: str, api_key: str, model: str,
     r = await _http().post(
         f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": model, "messages": messages, "temperature": 0.7},
+        json={"model": model, "messages": messages, "temperature": 0.7,
+              "max_tokens": _max_tokens()},
     )
     _raise_for_status(r, provider)
     data = r.json()
@@ -209,7 +218,7 @@ async def _chat_anthropic(api_key: str, model: str, system_prompt: str,
     r = await _http().post(
         "https://api.anthropic.com/v1/messages",
         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-        json={"model": model, "system": system_prompt, "max_tokens": 1024,
+        json={"model": model, "system": system_prompt, "max_tokens": _max_tokens(),
               "messages": messages},
     )
     _raise_for_status(r, "anthropic")
@@ -229,7 +238,8 @@ async def _chat_gemini(api_key: str, model: str, system_prompt: str,
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         params={"key": api_key},
         json={"systemInstruction": {"parts": [{"text": system_prompt}]},
-              "contents": contents},
+              "contents": contents,
+              "generationConfig": {"maxOutputTokens": _max_tokens()}},
     )
     _raise_for_status(r, "gemini")
     data = r.json()

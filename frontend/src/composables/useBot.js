@@ -39,7 +39,7 @@ export function useBot() {
   let finishing = false
   let resolveListen = null // resolves the current listenOnce() promise
   const SILENCE_RMS = 0.012 // below this = "silence"
-  const SILENCE_HOLD_MS = 1300 // stop this long after speech ends
+  const SILENCE_HOLD_MS = 650 // stop this long after speech ends
   const NO_SPEECH_MS = 6000 // if nobody speaks, end the turn (guest left)
   const MAX_RECORD_MS = 20000 // hard cap per turn
 
@@ -54,19 +54,37 @@ export function useBot() {
   }
 
   // ------------------------------------------------------------------ chat
-  /** Send a text prompt to the LLM and (optionally) speak the answer. */
+  /**
+   * Send a text prompt to the LLM and (optionally) speak the answer.
+   *
+   * Text and audio are fetched in two steps rather than one. Asking the
+   * server to do both (`speak: true`) means nothing reaches the guest until
+   * the MP3 has finished synthesizing - a second or more after the words
+   * themselves were ready. Showing the reply first makes the turn feel far
+   * quicker even though total time is unchanged.
+   */
   async function ask(prompt, { speak = true } = {}) {
     if (!prompt?.trim()) return
     error.value = ''
     lastUser.value = prompt
     setState('thinking')
     try {
-      const res = await api.chat(prompt, history.value.slice(-8), speak)
+      const res = await api.chat(prompt, history.value.slice(-8), false)
       lastReply.value = res.text
       history.value.push({ role: 'user', content: prompt })
       history.value.push({ role: 'assistant', content: res.text })
-      if (speak && res.audio_b64) await playAudio(res.audio_b64)
-      else setState('idle')
+
+      if (speak && res.text) {
+        // Voice is a nice-to-have: a TTS failure must not blank the reply
+        // the guest can already read.
+        try {
+          await playAudio(await api.tts(res.text))
+        } catch {
+          setState('idle')
+        }
+      } else {
+        setState('idle')
+      }
       return res
     } catch (e) {
       error.value = e.message || 'The bot could not respond. Check AI keys in Admin.'
@@ -74,11 +92,13 @@ export function useBot() {
     }
   }
 
-  function playAudio(b64) {
+  function playAudio(blob) {
     return new Promise((resolve) => {
       setState('speaking')
-      audioEl = new Audio(`data:audio/mpeg;base64,${b64}`)
+      const url = URL.createObjectURL(blob)
+      audioEl = new Audio(url)
       const done = () => {
+        URL.revokeObjectURL(url) // otherwise every turn leaks a blob
         setState('idle')
         resolve()
       }

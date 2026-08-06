@@ -95,6 +95,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "kiosk_bg_media": [],                         # list of {file, type} under data/backgrounds
     "kiosk_bg_slideshow_ms": 6000,                # per-slide duration for slideshow
     "kiosk_bg_dim": 35,                           # darken overlay 0-100 for legibility
+    # Cap on reply length. Short replies are faster twice over: less time
+    # generating, and TTS cost scales with character count. ~120 tokens is
+    # 2-3 spoken sentences, which is all a photobooth greeting needs.
+    "chat_max_tokens": 120,
     # --- Photobooth / printer ---
     "frame_overlay_path": "",                     # relative path under data/frames
     "default_printer": "",                        # CUPS printer name
