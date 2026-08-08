@@ -512,7 +512,13 @@ onBeforeUnmount(() => {
         <div v-if="cam.active.value" class="pointer-events-none absolute inset-0" style="background: radial-gradient(120% 80% at 50% 0%, transparent 60%, rgba(7,11,22,0.5) 100%)"></div>
 
         <!-- floating EMO face -->
-        <div v-if="settings.bot_face_visible" class="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 animate-float">
+        <!-- Sits higher with the camera off: the stage is full-screen then, so
+             the bottom-right corner is where the control dock now lives. -->
+        <div
+          v-if="settings.bot_face_visible"
+          class="absolute right-4 sm:right-6 animate-float"
+          :class="cam.active.value ? 'bottom-4 sm:bottom-6' : 'bottom-44 sm:bottom-48'"
+        >
           <BotFace :state="bot.botState.value" mood="happy" :size="168" />
         </div>
 

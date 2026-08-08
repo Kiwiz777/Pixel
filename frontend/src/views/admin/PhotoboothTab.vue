@@ -125,10 +125,17 @@ function savePrompt() {
   emit('save', { ai_enhance_prompt: form.ai_enhance_prompt })
 }
 
+// Saves on change: it lives in the frame card, whose only Save button is in a
+// different card further down - so waiting for a button meant the choice
+// silently reverted on the next settings reload.
+function saveFrameDisplay() {
+  emit('save', { frame_overlay_display: form.frame_overlay_display })
+  msg.value = 'Frame preview updated.'
+}
+
 function saveCapture() {
   emit('save', {
     capture_countdown_seconds: Math.max(0, Math.min(30, Number(form.capture_countdown_seconds) || 0)),
-    frame_overlay_display: form.frame_overlay_display,
   })
   msg.value = 'Capture settings saved.'
 }
@@ -193,6 +200,7 @@ onMounted(loadPrinters)
               v-model="form.frame_overlay_display"
               class="field max-w-xs"
               aria-describedby="frame-display-hint"
+              @change="saveFrameDisplay"
             >
               <option value="both">Live camera + photo review</option>
               <option value="capture">Live camera only</option>
