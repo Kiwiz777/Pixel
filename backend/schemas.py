@@ -57,6 +57,18 @@ class PrintRequest(BaseModel):
 
 
 # --- Printer ---------------------------------------------------------------
+# --- Contact us ------------------------------------------------------------
+class ContactCreate(BaseModel):
+    name: str
+    phone: str = ""
+    note: str = ""
+    source: str = "form"        # form|voice
+
+
+class ContactParse(BaseModel):
+    text: str                   # raw transcript to pull name/phone out of
+
+
 class DefaultPrinterRequest(BaseModel):
     name: str
 

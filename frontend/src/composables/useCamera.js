@@ -14,6 +14,11 @@ export function useCamera() {
   const videoRef = ref(null)
   const active = ref(false)
   const error = ref('')
+  // Actual width/height the camera delivered, once known. Cameras ignore the
+  // resolution hints below freely, so this is the only trustworthy source -
+  // and the viewfinder must be shaped to it, or `object-cover` silently crops
+  // the preview and the guest sees a tighter shot than the one that prints.
+  const videoAspect = ref(0)
   let stream = null
 
   async function start() {
@@ -31,8 +36,14 @@ export function useCamera() {
         audio: false,
       })
       if (videoRef.value) {
-        videoRef.value.srcObject = stream
-        await videoRef.value.play().catch(() => {})
+        const v = videoRef.value
+        const readAspect = () => {
+          if (v.videoWidth && v.videoHeight) videoAspect.value = v.videoWidth / v.videoHeight
+        }
+        v.addEventListener('loadedmetadata', readAspect)
+        v.srcObject = stream
+        await v.play().catch(() => {})
+        readAspect() // often already known by here; the listener covers the rest
       }
       active.value = true
       return true
@@ -53,6 +64,7 @@ export function useCamera() {
     stream?.getTracks().forEach((t) => t.stop())
     stream = null
     active.value = false
+    videoAspect.value = 0
   }
 
   /**
@@ -90,5 +102,5 @@ export function useCamera() {
 
   onBeforeUnmount(stop)
 
-  return { videoRef, active, error, start, stop, capture }
+  return { videoRef, active, error, videoAspect, start, stop, capture }
 }

@@ -11,6 +11,8 @@ const emit = defineEmits(['save', 'reload'])
 
 const form = reactive({
   ai_enhance_prompt: '',
+  capture_countdown_seconds: 5,
+  frame_overlay_display: 'both',
   print_copies: 1,
   print_media: '4x6.Borderless',
   print_color_mode: 'color',
@@ -50,6 +52,8 @@ watch(
   (s) => {
     if (!s) return
     form.ai_enhance_prompt = s.ai_enhance_prompt ?? ''
+    form.capture_countdown_seconds = s.capture_countdown_seconds ?? 5
+    form.frame_overlay_display = s.frame_overlay_display ?? 'both'
     form.print_copies = s.print_copies ?? 1
     form.print_media = s.print_media ?? '4x6.Borderless'
     form.print_color_mode = s.print_color_mode ?? 'color'
@@ -121,6 +125,14 @@ function savePrompt() {
   emit('save', { ai_enhance_prompt: form.ai_enhance_prompt })
 }
 
+function saveCapture() {
+  emit('save', {
+    capture_countdown_seconds: Math.max(0, Math.min(30, Number(form.capture_countdown_seconds) || 0)),
+    frame_overlay_display: form.frame_overlay_display,
+  })
+  msg.value = 'Capture settings saved.'
+}
+
 async function savePrintConfig() {
   try {
     await api.updatePrintConfig({
@@ -173,7 +185,53 @@ onMounted(loadPrinters)
             Upload PNG frame
           </label>
           <p class="hint">Use a transparent PNG sized to your photo's aspect ratio. The clear centre shows the photo; printed and on-screen previews use it automatically.</p>
+
+          <div class="mt-4">
+            <label class="label" for="frame-display">Show frame preview on</label>
+            <select
+              id="frame-display"
+              v-model="form.frame_overlay_display"
+              class="field max-w-xs"
+              aria-describedby="frame-display-hint"
+            >
+              <option value="both">Live camera + photo review</option>
+              <option value="capture">Live camera only</option>
+              <option value="modal">Photo review only</option>
+              <option value="none">Don't preview</option>
+            </select>
+            <p id="frame-display-hint" class="hint mt-1">
+              Preview only — this doesn't change what gets printed.
+            </p>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Capture behaviour -->
+    <div class="glass-card p-5 sm:p-6 mb-5">
+      <h2 class="font-display text-lg font-semibold mb-3">Capture</h2>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="label" for="countdown">Countdown before the shot</label>
+          <div class="flex items-center gap-2">
+            <input
+              id="countdown"
+              v-model.number="form.capture_countdown_seconds"
+              type="number" min="0" max="30"
+              class="field max-w-[8rem]"
+              aria-describedby="countdown-hint"
+            />
+            <span class="hint !mt-0">seconds</span>
+          </div>
+          <p id="countdown-hint" class="hint mt-1">0 shoots immediately.</p>
+        </div>
+      </div>
+      <p class="hint mt-3">
+        With the camera off, the first tap of <span class="text-slate-200">Capture Photo</span>
+        opens the viewfinder so guests can see their framing; the next tap starts the countdown.
+      </p>
+      <div class="flex justify-end mt-3">
+        <button class="btn-accent btn-sm" @click="saveCapture">Save capture settings</button>
       </div>
     </div>
 

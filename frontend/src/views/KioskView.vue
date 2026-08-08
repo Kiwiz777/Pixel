@@ -14,6 +14,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import BotFace from '../components/BotFace.vue'
 import CaptureModal from '../components/CaptureModal.vue'
+import ContactModal from '../components/ContactModal.vue'
 import QuizModal from '../components/QuizModal.vue'
 import KioskBackground from '../components/KioskBackground.vue'
 import { api, wsUrl } from '../lib/api'
@@ -48,10 +49,17 @@ const settings = ref({
   kiosk_bg_slideshow_ms: 6000,
   kiosk_bg_dim: 35,
   capture_aspect: 16 / 9,
+  capture_countdown_seconds: 5,
+  frame_overlay_path: '',
+  frame_overlay_display: 'both',
+  contact_form_enabled: true,
 })
 const capture = ref(null)
 const capturing = ref(false)
+const countdown = ref(0) // seconds left on the "get ready" timer, 0 = not counting
+let countdownTimer = null
 const showQuiz = ref(false)
+const showContact = ref(false)
 const rewardSession = ref(null) // reward config applied to the next capture
 const quizAvailable = computed(() => settings.value.quiz_enabled && settings.value.active_quiz_id != null)
 // Width/height of the paper, from Admin. 0 means "auto" - the printer fits and
@@ -59,8 +67,22 @@ const quizAvailable = computed(() => settings.value.quiz_enabled && settings.val
 const printAspect = computed(() => Number(settings.value.capture_aspect) || 0)
 // Passed to capture(): null leaves the sensor frame completely untouched.
 const cropAspect = computed(() => printAspect.value || null)
-// Layout only. In auto mode the stage keeps the camera's usual widescreen shape.
-const stageAspect = computed(() => printAspect.value || 16 / 9)
+// Layout only. In auto mode nothing is cropped, so the viewfinder takes the
+// camera's real shape - anything else makes `object-cover` crop the preview and
+// show a tighter shot than the one that actually prints.
+const stageAspect = computed(() => printAspect.value || cam.videoAspect.value || 16 / 9)
+
+// ---- photo frame overlay --------------------------------------------------
+const frameUrl = computed(() =>
+  settings.value.frame_overlay_path ? `/media/frames/${settings.value.frame_overlay_path}` : '',
+)
+const frameDisplay = computed(() => settings.value.frame_overlay_display || 'both')
+const frameOnCapture = computed(
+  () => !!frameUrl.value && ['capture', 'both'].includes(frameDisplay.value),
+)
+const frameInModal = computed(
+  () => !!frameUrl.value && ['modal', 'both'].includes(frameDisplay.value),
+)
 // Height drives the box (aspect-ratio derives the width), capped so a portrait
 // stage still fits the screen. min() keeps the ratio exact at any viewport,
 // which is what makes the preview a true preview.
@@ -251,11 +273,44 @@ async function onServerFace(data) {
 }
 
 // ---- actions --------------------------------------------------------------
-async function doCapture() {
+/**
+ * First press with the camera off only opens the viewfinder - guests need to
+ * see their framing before anything is taken. The second press shoots.
+ */
+async function onCaptureButton() {
   if (!cam.active.value) {
     await startCamera()
-    if (!cam.active.value) return
+    return
   }
+  await runCapture()
+}
+
+function cancelCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = null
+  countdown.value = 0
+}
+
+/** Count down (if configured), then grab the frame. */
+async function runCapture() {
+  if (capturing.value || countdown.value) return
+
+  const seconds = Math.max(0, Math.min(30, Number(settings.value.capture_countdown_seconds) || 0))
+  if (seconds > 0) {
+    countdown.value = seconds
+    const finished = await new Promise((resolve) => {
+      countdownTimer = setInterval(() => {
+        countdown.value -= 1
+        if (countdown.value <= 0) {
+          cancelCountdown()
+          resolve(true)
+        }
+      }, 1000)
+    })
+    // Camera stopped (or the view unmounted) mid-count - don't shoot into nothing.
+    if (!finished || !cam.active.value) return
+  }
+
   capturing.value = true
   try {
     const blob = await cam.capture(0.92, cropAspect.value)
@@ -272,7 +327,10 @@ async function doCapture() {
 // reward context passed to the CaptureModal.
 async function onQuizReward(reward) {
   rewardSession.value = reward
-  await doCapture()
+  // A reward capture is already "armed" by winning, so open the camera and
+  // shoot rather than making them press again.
+  if (!cam.active.value) await startCamera()
+  if (cam.active.value) await runCapture()
 }
 
 function onCaptureClosed() {
@@ -288,6 +346,7 @@ let idleTimer = null
 function stopCamera() {
   faceWatch.stop()
   cam.stop()
+  cancelCountdown() // no counting down to a shot the camera can't take
   if (idleTimer) clearTimeout(idleTimer)
 }
 
@@ -354,6 +413,7 @@ onBeforeUnmount(() => {
   faceWatch.stop()
   clearTimeout(greetTimer)
   if (idleTimer) clearTimeout(idleTimer)
+  cancelCountdown()
   window.removeEventListener('pointerdown', markActivity)
 })
 </script>
@@ -377,9 +437,16 @@ onBeforeUnmount(() => {
 
     <!-- video stage -->
     <main class="relative z-10 min-h-dvh grid place-items-center px-4 py-6">
+      <!-- With the camera on this is a framed viewfinder. With it off the panel
+           would just be an empty glass box, so it becomes a transparent
+           full-area layer - the bot face and speech bubble still need somewhere
+           to sit, they just sit on the kiosk background instead. -->
       <div
-        class="relative mx-auto max-w-5xl rounded-3xl overflow-hidden glass shadow-glass"
-        :style="stageStyle"
+        class="relative overflow-hidden"
+        :class="cam.active.value
+          ? 'mx-auto max-w-5xl rounded-3xl glass shadow-glass'
+          : 'absolute inset-0'"
+        :style="cam.active.value ? stageStyle : undefined"
       >
         <!-- browser camera feed (mirrored like a selfie) -->
         <video
@@ -389,6 +456,34 @@ onBeforeUnmount(() => {
           autoplay playsinline muted
           v-show="cam.active.value"
         ></video>
+
+        <!-- Photo frame preview, so guests see the border they'll be printed in -->
+        <img
+          v-if="frameOnCapture && cam.active.value"
+          :src="frameUrl"
+          alt=""
+          aria-hidden="true"
+          class="absolute inset-0 h-full w-full object-fill pointer-events-none z-10"
+        />
+
+        <!-- "Get ready" countdown -->
+        <transition name="fade">
+          <div
+            v-if="countdown"
+            class="absolute inset-0 z-20 grid place-items-center bg-ink-950/40 backdrop-blur-[2px]"
+            role="status"
+            aria-live="assertive"
+          >
+            <div class="text-center">
+              <div
+                :key="countdown"
+                class="font-display font-black text-white leading-none countdown-pop"
+                style="font-size: clamp(5rem, 22vh, 12rem)"
+              >{{ countdown }}</div>
+              <p class="font-display text-xl text-electric-300 mt-2">Get ready!</p>
+            </div>
+          </div>
+        </transition>
 
         <!-- Developer mode: face-detection / recognition overlay -->
         <canvas
@@ -413,8 +508,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- vignette -->
-        <div class="pointer-events-none absolute inset-0" style="background: radial-gradient(120% 80% at 50% 0%, transparent 60%, rgba(7,11,22,0.5) 100%)"></div>
+        <!-- vignette (belongs to the viewfinder, not the bare background) -->
+        <div v-if="cam.active.value" class="pointer-events-none absolute inset-0" style="background: radial-gradient(120% 80% at 50% 0%, transparent 60%, rgba(7,11,22,0.5) 100%)"></div>
 
         <!-- floating EMO face -->
         <div v-if="settings.bot_face_visible" class="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 animate-float">
@@ -431,20 +526,23 @@ onBeforeUnmount(() => {
       </div>
     </main>
 
-    <!-- control dock: docked at the bottom with the camera on, floats to the
-         centre (bigger) when the camera is off -->
+    <!-- control dock: always at the bottom, camera on or off -->
     <footer class="absolute bottom-0 inset-x-0 z-20 pb-7 sm:pb-9 grid place-items-center">
-      <div class="dock-wrap grid place-items-center gap-4" :class="{ 'dock-wrap--hero': !cam.active.value }">
+      <div class="grid place-items-center gap-4">
       <transition name="fade">
         <p v-if="!cam.active.value" class="font-display text-lg sm:text-xl text-slate-100 text-center px-6">
-          {{ quizAvailable ? 'Ready when you are — take the quiz or snap a photo' : 'Ready when you are — tap Capture Photo to start' }}
+          {{ quizAvailable ? 'Ready when you are — take the quiz or snap a photo' : 'Tap Capture Photo to open the camera' }}
         </p>
       </transition>
       <div class="glass-card px-4 py-3 flex items-center gap-3">
-        <button class="btn-primary text-lg px-7 py-4" :disabled="capturing" @click="doCapture">
+        <button
+          class="btn-primary text-lg px-7 py-4"
+          :disabled="capturing || !!countdown"
+          @click="onCaptureButton"
+        >
           <span v-if="capturing" class="h-5 w-5 rounded-full border-2 border-ink-950 border-t-transparent animate-spin"></span>
           <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          Capture Photo
+          {{ countdown ? 'Get ready…' : cam.active.value ? 'Capture Now' : 'Capture Photo' }}
         </button>
 
         <button
@@ -454,6 +552,15 @@ onBeforeUnmount(() => {
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 17h.01" stroke-linecap="round"/></svg>
           Take the Quiz
+        </button>
+
+        <button
+          v-if="settings.contact_form_enabled"
+          class="btn-ghost text-lg px-7 py-4"
+          @click="showContact = true"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="m22 7-10 6L2 7"/></svg>
+          Contact Us
         </button>
 
         <button
@@ -474,12 +581,20 @@ onBeforeUnmount(() => {
       <p v-if="bot.error.value" class="hint text-red-300 mt-2" role="alert">{{ bot.error.value }}</p>
     </footer>
 
+    <!-- contact us -->
+    <ContactModal
+      v-if="showContact"
+      :language="settings.default_language"
+      @close="showContact = false"
+    />
+
     <!-- post-capture modal -->
     <CaptureModal
       v-if="capture"
       :capture="capture"
       :reward="rewardSession"
       :aspect="stageAspect"
+      :frame-url="frameInModal ? frameUrl : ''"
       @retake="capture = null"
       @close="onCaptureClosed"
       @printed="onCaptureClosed"
@@ -499,19 +614,23 @@ onBeforeUnmount(() => {
 .bubble-leave-active { transition: all 0.2s ease-in; }
 .bubble-enter-from, .bubble-leave-to { opacity: 0; transform: translateY(10px); }
 
-/* Control dock floats to the vertical centre (and grows) when the camera is off. */
-.dock-wrap {
-  transition: transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
-  transform-origin: center bottom;
-}
-.dock-wrap--hero {
-  transform: translateY(-42vh) scale(1.14);
-}
 .fade-enter-active { transition: opacity 0.4s ease 0.15s; }
 .fade-leave-active { transition: opacity 0.15s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
+/* Each countdown number punches in — :key on the element restarts it per tick,
+   giving the beat a visible pulse instead of a silently changing glyph. */
+.countdown-pop {
+  animation: countdown-pop 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  text-shadow: 0 0.06em 0.5em rgb(0 0 0 / 0.55);
+}
+@keyframes countdown-pop {
+  0% { opacity: 0; transform: scale(1.5); }
+  35% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.9; transform: scale(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .dock-wrap { transition: none; }
+  .countdown-pop { animation: none; }
 }
 </style>

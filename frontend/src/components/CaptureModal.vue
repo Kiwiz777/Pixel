@@ -12,6 +12,9 @@ const props = defineProps({
   // Shape of the print. The review box matches it so the guest sees the photo
   // at the proportions it will come out of the printer.
   aspect: { type: Number, default: 16 / 9 },
+  // Frame overlay preview. Empty string = don't show one here (Admin decides
+  // whether the frame appears on the live view, this modal, or both).
+  frameUrl: { type: String, default: '' },
 })
 const emit = defineEmits(['retake', 'close', 'printed'])
 
@@ -135,6 +138,15 @@ async function printPhoto() {
         :style="{ aspectRatio: String(aspect), width: `min(100%, ${(52 * aspect).toFixed(2)}vh)` }"
       >
         <img :src="shownUrl" alt="Your photo" class="h-full w-full object-contain" />
+        <!-- Skipped once the server has already burned the frame into the photo,
+             otherwise it would show twice. -->
+        <img
+          v-if="frameUrl && !framedUrl"
+          :src="frameUrl"
+          alt=""
+          aria-hidden="true"
+          class="absolute inset-0 h-full w-full object-fill pointer-events-none"
+        />
         <div v-if="busy === 'enhance'" class="absolute inset-0 grid place-items-center bg-ink-950/60">
           <div class="text-center">
             <div class="mx-auto mb-3 h-10 w-10 rounded-full border-2 border-electric-400 border-t-transparent animate-spin"></div>

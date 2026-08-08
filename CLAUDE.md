@@ -32,7 +32,8 @@ frontend/               Vue 3 + Vite + Tailwind
                         useCamera.js (getUserMedia), usePresence.js (client face/motion
                         auto-interact), useSecretAccess.js (hidden admin gesture)
   src/lib/api.js        fetch wrapper + admin token + wsUrl()
-docs/                   ARCHITECTURE.md, DEPLOYMENT_PI.md
+docs/                   ARCHITECTURE.md, DEPLOYMENT_PI.md (run from source),
+                        BUILD.md (compile to a shippable ARM binary)
 ```
 
 ## Running (dev)

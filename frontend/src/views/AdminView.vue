@@ -14,6 +14,7 @@ import PhotoboothTab from './admin/PhotoboothTab.vue'
 import KioskTab from './admin/KioskTab.vue'
 import QuizTab from './admin/QuizTab.vue'
 import UsersTab from './admin/UsersTab.vue'
+import ContactsTab from './admin/ContactsTab.vue'
 import LogsTab from './admin/LogsTab.vue'
 
 const TABS = [
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'kiosk', label: 'Kiosk', comp: KioskTab },
   { id: 'quiz', label: 'Quiz', comp: QuizTab },
   { id: 'users', label: 'Users', comp: UsersTab },
+  { id: 'contacts', label: 'Contacts', comp: ContactsTab },
   { id: 'logs', label: 'Logs', comp: LogsTab },
 ]
 

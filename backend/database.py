@@ -99,6 +99,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # generating, and TTS cost scales with character count. ~120 tokens is
     # 2-3 spoken sentences, which is all a photobooth greeting needs.
     "chat_max_tokens": 120,
+    # --- Contact us ---
+    "contact_form_enabled": True,                 # show the Contact us button on the kiosk
+    # --- Photobooth / capture ---
+    "capture_countdown_seconds": 5,               # 0 = shoot immediately
+    "frame_overlay_display": "both",              # none|capture|modal|both
     # --- Photobooth / printer ---
     "frame_overlay_path": "",                     # relative path under data/frames
     "default_printer": "",                        # CUPS printer name
@@ -189,6 +194,15 @@ CREATE TABLE IF NOT EXISTS logs (
 
 CREATE INDEX IF NOT EXISTS idx_logs_type ON logs(type);
 CREATE INDEX IF NOT EXISTS idx_logs_created ON logs(created_at);
+
+CREATE TABLE IF NOT EXISTS contacts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    phone      TEXT NOT NULL DEFAULT '',
+    note       TEXT NOT NULL DEFAULT '',
+    source     TEXT NOT NULL DEFAULT 'form',   -- form|voice
+    created_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS quizzes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -292,6 +306,39 @@ def update_settings(values: dict[str, Any]) -> None:
 # --------------------------------------------------------------------------
 # Users helpers
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# Contacts (kiosk "Contact us" form)
+# --------------------------------------------------------------------------
+def create_contact(name: str, phone: str = "", note: str = "",
+                   source: str = "form") -> dict[str, Any]:
+    now = _utcnow()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO contacts(name, phone, note, source, created_at) VALUES (?,?,?,?,?)",
+            (name.strip(), phone.strip(), note.strip(), source, now),
+        )
+        return {"id": cur.lastrowid, "name": name.strip(), "phone": phone.strip(),
+                "note": note.strip(), "source": source, "created_at": now}
+
+
+def list_contacts(limit: int = 500) -> list[dict[str, Any]]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM contacts ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_contact(contact_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+
+
+def clear_contacts() -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM contacts")
+
+
 def list_users() -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()

@@ -24,7 +24,7 @@ import config
 import database as db
 import printer as printer_service
 import vision
-from routers import ai, logs, photobooth, printer, quiz, settings, users
+from routers import ai, contacts, logs, photobooth, printer, quiz, settings, users
 
 
 @contextlib.asynccontextmanager
@@ -57,6 +57,7 @@ app.include_router(printer.router)
 app.include_router(photobooth.router)
 app.include_router(ai.router)
 app.include_router(quiz.router)
+app.include_router(contacts.router)
 
 # Static media (captures + uploaded frames + face refs)
 app.mount("/media/captures", StaticFiles(directory=config.CAPTURES_DIR), name="captures")

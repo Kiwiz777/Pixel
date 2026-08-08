@@ -46,6 +46,9 @@ async def public_settings():
         "multilingual_autodetect": db.get_setting("multilingual_autodetect", True),
         "dev_mode": db.get_setting("dev_mode", False),
         "frame_overlay_path": db.get_setting("frame_overlay_path", ""),
+        "contact_form_enabled": db.get_setting("contact_form_enabled", True),
+        "capture_countdown_seconds": db.get_setting("capture_countdown_seconds", 5),
+        "frame_overlay_display": db.get_setting("frame_overlay_display", "both"),
         # Shape of the print, so the Kiosk viewport and the capture match the
         # paper exactly (WYSIWYG - nothing is cropped after the shutter).
         "print_orientation": db.get_setting("print_orientation", "portrait"),

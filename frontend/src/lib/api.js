@@ -87,6 +87,14 @@ export const api = {
     return res.blob()
   },
 
+  // Contact us (public: kiosk)
+  submitContact: (body) => request('POST', '/api/contacts', { body }),
+  parseContact: (text) => request('POST', '/api/contacts/parse', { body: { text } }),
+  // Contact us (admin)
+  contacts: () => request('GET', '/api/contacts', { admin: true }),
+  deleteContact: (id) => request('DELETE', `/api/contacts/${id}`, { admin: true }),
+  clearContacts: () => request('DELETE', '/api/contacts', { admin: true }),
+
   // Quiz (public: kiosk)
   activeQuiz: () => request('GET', '/api/quiz/active'),
   submitQuiz: (quiz_id, answers) =>

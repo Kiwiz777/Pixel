@@ -16,7 +16,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 cd "$HERE"
 
-echo "==> Target: $(uname -m) / python $(python3 --version)"
+# Nuitka compiles with whichever interpreter can import the app's deps. If you
+# installed them into a venv rather than system-wide, point PYTHON at it:
+#   PYTHON=.venv/bin/python ./build_pi.sh
+PYTHON="${PYTHON:-python3}"
+
+echo "==> Target: $(uname -m) / $("$PYTHON" --version)"
 if [ "$(uname -m)" != "aarch64" ]; then
   echo "!!  WARNING: not aarch64. The binary will not run on 64-bit Pi OS." >&2
 fi
@@ -53,7 +58,7 @@ fi
 #    sys.path so the guarded imports in vision.py / printer.py still resolve.
 # ---------------------------------------------------------------------------
 echo "==> Compiling backend with Nuitka (this takes a while on a Pi)"
-python3 -m nuitka \
+"$PYTHON" -m nuitka \
   --standalone \
   --output-dir=build \
   --output-filename=pixel \
