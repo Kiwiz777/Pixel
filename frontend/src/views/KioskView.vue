@@ -527,14 +527,17 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- control dock: always at the bottom, camera on or off -->
-    <footer class="absolute bottom-0 inset-x-0 z-20 pb-7 sm:pb-9 grid place-items-center">
-      <div class="grid place-items-center gap-4">
+    <footer class="absolute bottom-0 inset-x-0 z-20 px-4 pb-7 sm:pb-9 grid place-items-center">
+      <div class="grid place-items-center gap-4 w-full">
       <transition name="fade">
         <p v-if="!cam.active.value" class="font-display text-lg sm:text-xl text-slate-100 text-center px-6">
           {{ quizAvailable ? 'Ready when you are — take the quiz or snap a photo' : 'Tap Capture Photo to open the camera' }}
         </p>
       </transition>
-      <div class="glass-card px-4 py-3 flex items-center gap-3">
+      <!-- Wraps: with quiz, contact and talk all enabled this is four large
+           buttons (~880px), which overflows any screen narrower than a 1080
+           portrait panel. -->
+      <div class="glass-card px-4 py-3 flex flex-wrap items-center justify-center gap-3 max-w-5xl mx-auto">
         <button
           class="btn-primary text-lg px-7 py-4"
           :disabled="capturing || !!countdown"
