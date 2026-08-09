@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -64,13 +66,57 @@ async def tts(payload: TTSRequest):
 
 
 @router.post("/stt")
-async def stt(file: UploadFile = File(...), language: str | None = Form(None)):
-    """Transcribe microphone audio captured by the Kiosk."""
+async def stt(file: UploadFile = File(...), language: str | None = Form(None),
+              prompt: str | None = Form(None)):
+    """
+    Transcribe microphone audio captured by the Kiosk.
+
+    `prompt` biases recognition for a specific screen - the contact form sends
+    one describing names, job titles and email addresses, which is what makes
+    dictated proper nouns land.
+    """
     data = await file.read()
+    filename = file.filename or "speech.webm"
+    # Saved before transcription, so a recording exists even when STT errors -
+    # that is exactly the case you want to listen back to.
+    audio_url = _keep_recording(data, filename)
     try:
-        text = await ai_brain.speech_to_text(
-            data, filename=file.filename or "speech.webm", language=language
-        )
+        result = await ai_brain.speech_to_text(data, filename=filename,
+                                               language=language, prompt=prompt)
     except ai_brain.AIError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"text": text}
+    # `raw`/`filtered`/`language`/`duration`/`audio_url` feed the diagnostics panel.
+    result["audio_url"] = audio_url
+    return result
+
+
+def _keep_recording(data: bytes, filename: str) -> str:
+    """
+    Save the clip under data/recordings and prune to the retention limit.
+
+    Best-effort: a full or read-only disk must never break transcription, so
+    every failure here is swallowed and simply yields no playback URL.
+    """
+    if not db.get_setting("stt_keep_recordings", True):
+        return ""
+    try:
+        import config
+
+        ext = Path(filename).suffix.lower() or ".webm"
+        if ext not in (".webm", ".ogg", ".wav", ".mp3", ".m4a"):
+            ext = ".webm"
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+        dest = Path(config.RECORDINGS_DIR) / f"stt-{stamp}{ext}"
+        dest.write_bytes(data)
+
+        try:
+            keep = max(1, min(500, int(db.get_setting("stt_recordings_keep", 60))))
+        except (TypeError, ValueError):
+            keep = 60
+        clips = sorted(Path(config.RECORDINGS_DIR).glob("stt-*"), key=lambda p: p.name)
+        for old in clips[:-keep]:
+            old.unlink(missing_ok=True)
+
+        return f"/media/recordings/{dest.name}"
+    except Exception:
+        return ""

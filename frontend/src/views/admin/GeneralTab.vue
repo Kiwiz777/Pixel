@@ -18,6 +18,11 @@ const form = reactive({
   kiosk_camera_autostart: true,
   camera_off_after_session: false,
   camera_idle_off_seconds: 0,
+  // Diagnostics overlays
+  diag_show_conversation: false,
+  diag_show_ai_latency: false,
+  stt_keep_recordings: true,
+  stt_recordings_keep: 60,
 })
 
 watch(
@@ -86,6 +91,46 @@ function save() {
         <label class="label" for="persona">Bot Persona / System Prompt</label>
         <textarea id="persona" v-model="form.system_persona" rows="3" class="field" placeholder="You are Pixel, a cheerful multilingual photobooth robot…"></textarea>
         <p class="hint">Sets Pixel's personality and tone across every provider.</p>
+      </div>
+    </div>
+
+    <div class="glass-card p-5 sm:p-6 mt-5 divide-y divide-white/10">
+      <div class="pb-4">
+        <h2 class="font-display text-lg font-semibold">Diagnostics</h2>
+        <p class="hint">On-screen panels for debugging on site. Turn them off before an event — they overlay the kiosk.</p>
+      </div>
+
+      <ToggleSwitch
+        v-model="form.diag_show_conversation"
+        label="Show conversation &amp; STT"
+        hint="Live microphone level, what Whisper transcribed, and every reply Pixel gave."
+      />
+
+      <ToggleSwitch
+        v-model="form.diag_show_ai_latency"
+        label="Show AI connection timings"
+        hint="Per-request milliseconds for chat, speech-to-text and text-to-speech, with averages."
+      />
+
+      <ToggleSwitch
+        v-model="form.stt_keep_recordings"
+        label="Keep voice recordings"
+        hint="Save every clip sent for transcription so it can be replayed from the diagnostics panel. Stored under data/recordings."
+      />
+
+      <div class="py-4">
+        <label class="label" for="keepn">Recordings to keep</label>
+        <div class="flex items-center gap-2">
+          <input
+            id="keepn" v-model.number="form.stt_recordings_keep"
+            type="number" min="1" max="500"
+            class="field max-w-[8rem]" aria-describedby="keepn-hint"
+          />
+          <span class="hint !mt-0">clips</span>
+        </div>
+        <p id="keepn-hint" class="hint">
+          Oldest are deleted beyond this. These are guests' voices on an SD card — keep it modest.
+        </p>
       </div>
     </div>
 

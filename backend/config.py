@@ -54,10 +54,12 @@ FRAMES_DIR = DATA_DIR / "frames"              # uploaded PNG overlays
 FACES_DIR = DATA_DIR / "faces"                # known-face reference images
 BACKGROUNDS_DIR = DATA_DIR / "backgrounds"    # kiosk background images/videos
 REWARDS_DIR = DATA_DIR / "rewards"            # quiz reward images shown to winners
+RECORDINGS_DIR = DATA_DIR / "recordings"      # kept STT audio, for playback/debugging
 DB_PATH = Path(os.getenv("PB_DB_PATH", DATA_DIR / "photobooth.db"))
 
 try:
-    for _d in (DATA_DIR, CAPTURES_DIR, FRAMES_DIR, FACES_DIR, BACKGROUNDS_DIR, REWARDS_DIR):
+    for _d in (DATA_DIR, CAPTURES_DIR, FRAMES_DIR, FACES_DIR, BACKGROUNDS_DIR,
+               REWARDS_DIR, RECORDINGS_DIR):
         _d.mkdir(parents=True, exist_ok=True)
 except OSError as _exc:  # read-only or unwritable state dir - fail loudly, not weirdly
     raise RuntimeError(

@@ -61,6 +61,9 @@ class PrintRequest(BaseModel):
 class ContactCreate(BaseModel):
     name: str
     phone: str = ""
+    email: str = ""             # optional
+    job_title: str = ""
+    company: str = ""
     note: str = ""
     source: str = "form"        # form|voice
 

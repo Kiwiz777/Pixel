@@ -11,7 +11,7 @@
 import { computed, ref } from 'vue'
 
 const props = defineProps({
-  layout: { type: String, default: 'text' }, // text|tel
+  layout: { type: String, default: 'text' }, // text|tel|email
 })
 const emit = defineEmits(['key', 'backspace', 'close'])
 
@@ -30,11 +30,15 @@ const TEL_ROWS = [
 ]
 
 const isTel = computed(() => props.layout === 'tel')
-const rows = computed(() =>
-  isTel.value
-    ? TEL_ROWS
-    : LETTER_ROWS.map((row) => row.map((k) => (shift.value ? k.toUpperCase() : k))),
-)
+const isEmail = computed(() => props.layout === 'email')
+const rows = computed(() => {
+  if (isTel.value) return TEL_ROWS
+  // Addresses are lowercase and need digits reachable, so no shift games here.
+  const letters = LETTER_ROWS.map((row) =>
+    row.map((k) => (shift.value && !isEmail.value ? k.toUpperCase() : k)),
+  )
+  return isEmail.value ? [['1','2','3','4','5','6','7','8','9','0'], ...letters] : letters
+})
 
 function press(key) {
   emit('key', key)
@@ -61,7 +65,7 @@ function press(key) {
 
     <div class="flex justify-center gap-1.5">
       <button
-        v-if="!isTel"
+        v-if="!isTel && !isEmail"
         type="button"
         class="vk-key px-4"
         :class="shift ? 'vk-key--active' : ''"
@@ -69,8 +73,16 @@ function press(key) {
         aria-label="Shift"
         @click="shift = !shift"
       >⇧</button>
+      <!-- Addresses are typed far more often than they are spelled out, so the
+           three fiddliest characters get dedicated keys. -->
+      <template v-if="isEmail">
+        <button type="button" class="vk-key px-3" @click="press('@')">@</button>
+        <button type="button" class="vk-key px-3" @click="press('.')">.</button>
+        <button type="button" class="vk-key px-3" @click="press('_')">_</button>
+        <button type="button" class="vk-key px-3" @click="press('.com')">.com</button>
+      </template>
       <button
-        v-if="!isTel"
+        v-if="!isTel && !isEmail"
         type="button"
         class="vk-key flex-1"
         aria-label="Space"

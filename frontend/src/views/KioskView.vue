@@ -15,6 +15,7 @@ import { useRouter } from 'vue-router'
 import BotFace from '../components/BotFace.vue'
 import CaptureModal from '../components/CaptureModal.vue'
 import ContactModal from '../components/ContactModal.vue'
+import DiagnosticsOverlay from '../components/DiagnosticsOverlay.vue'
 import QuizModal from '../components/QuizModal.vue'
 import KioskBackground from '../components/KioskBackground.vue'
 import { api, wsUrl } from '../lib/api'
@@ -53,6 +54,8 @@ const settings = ref({
   frame_overlay_path: '',
   frame_overlay_display: 'both',
   contact_form_enabled: true,
+  diag_show_conversation: false,
+  diag_show_ai_latency: false,
 })
 const capture = ref(null)
 const capturing = ref(false)
@@ -109,8 +112,15 @@ const faceWatch = useFaceWatch(faceId, {
 let eventWs = null
 let greetTimer = null
 
+// Language pinned by a double-tap for this conversation ('' = auto-detect).
+const forcedLang = ref('')
+
 const talkLabel = computed(() => {
-  if (bot.isRecording()) return 'Listening… (pause to send)'
+  if (bot.isRecording()) {
+    return forcedLang.value === 'ar-EG'
+      ? 'بسمعك… (اسكت عشان تبعت)'
+      : 'Listening… (pause to send)'
+  }
   if (bot.conversing.value || inFlow.value) return 'End chat'
   return 'Talk to Me'
 })
@@ -181,12 +191,12 @@ async function onboardNewUser(descriptor) {
     /* snapshot is best-effort */
   }
 
-  await bot.ask(`Greet a brand-new guest warmly, say you'd love to get to know them, and ask their name. One or two short sentences. Reply ONLY in ${ln}.`)
+  await bot.ask(`Greet a brand-new guest warmly, say you'd love to get to know them, and ask their name. One or two short sentences. Reply ONLY in ${ln}.`, { direction: true })
   const nameResp = await bot.listenOnce(lang)
   if (!nameResp) return // guest walked off
   const name = await extractName(nameResp)
 
-  await bot.ask(`Nice to meet ${name}. Say it's lovely to meet them by name and ask what they're into — hobbies or interests. Keep it short. Reply ONLY in ${ln}.`)
+  await bot.ask(`Nice to meet ${name}. Say it's lovely to meet them by name and ask what they're into — hobbies or interests. Keep it short. Reply ONLY in ${ln}.`, { direction: true })
   const interestsResp = (await bot.listenOnce(lang)) || ''
   const bio = await extractInterests(interestsResp)
 
@@ -202,6 +212,7 @@ async function onboardNewUser(descriptor) {
     saved
       ? `You just saved ${name} as a new friend. In a fun, warm way tell them that now you two are friends and you'll recognise them whenever you see them again, then invite them to take a photo. Short. Reply ONLY in ${ln}.`
       : `Thank ${name} warmly and invite them to take a photo. Short. Reply ONLY in ${ln}.`,
+    { direction: true },
   )
 }
 
@@ -347,6 +358,9 @@ function stopCamera() {
   faceWatch.stop()
   cam.stop()
   cancelCountdown() // no counting down to a shot the camera can't take
+  // The camera going idle means the guest walked away. Clear the thread so the
+  // next person doesn't inherit a stranger's conversation.
+  bot.resetConversation()
   if (idleTimer) clearTimeout(idleTimer)
 }
 
@@ -366,13 +380,39 @@ function markActivity() {
   }
 }
 
+// Tap = start listening with automatic language detection.
+// Double-tap (second tap within this window) = pin Egyptian Arabic.
+//
+// The recording starts on the FIRST tap either way - the language hint isn't
+// sent until the clip is uploaded, seconds later, so the second tap only has
+// to arrive before the guest stops speaking. That means no artificial delay
+// waiting to see whether a double-tap is coming.
+const DOUBLE_TAP_MS = 600
+const DIALECT_LANG = 'ar-EG'
+let talkStartedAt = 0
+
 async function toggleTalk() {
-  if (bot.conversing.value || bot.isRecording() || inFlow.value) {
+  const active = bot.conversing.value || bot.isRecording() || inFlow.value
+
+  if (active) {
+    // Inside the window, a second tap means "this is Egyptian Arabic", not
+    // "stop" - otherwise double-tapping would just cancel the turn.
+    if (Date.now() - talkStartedAt < DOUBLE_TAP_MS && forcedLang.value !== DIALECT_LANG) {
+      forcedLang.value = DIALECT_LANG
+      bot.setConversationLanguage(DIALECT_LANG)
+      flashGreeting('مصري — اتكلم عادي')
+      return
+    }
     inFlow.value = false
+    forcedLang.value = ''
     bot.endConversation()
-  } else {
-    bot.converse(settings.value.default_language)
+    return
   }
+
+  talkStartedAt = Date.now()
+  forcedLang.value = ''
+  // Auto-detect unless the Admin pinned a language for the venue.
+  bot.converse(settings.value.multilingual_autodetect ? null : settings.value.default_language)
 }
 
 // Start (or retry) the camera, then face watching once models are ready.
@@ -589,6 +629,12 @@ onBeforeUnmount(() => {
       </div>
       <p v-if="bot.error.value" class="hint text-red-300 mt-2" role="alert">{{ bot.error.value }}</p>
     </footer>
+
+    <!-- on-site diagnostics (Admin -> General) -->
+    <DiagnosticsOverlay
+      :show-conversation="settings.diag_show_conversation"
+      :show-latency="settings.diag_show_ai_latency"
+    />
 
     <!-- contact us -->
     <ContactModal

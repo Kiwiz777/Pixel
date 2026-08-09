@@ -47,6 +47,8 @@ async def public_settings():
         "dev_mode": db.get_setting("dev_mode", False),
         "frame_overlay_path": db.get_setting("frame_overlay_path", ""),
         "contact_form_enabled": db.get_setting("contact_form_enabled", True),
+        "diag_show_conversation": db.get_setting("diag_show_conversation", False),
+        "diag_show_ai_latency": db.get_setting("diag_show_ai_latency", False),
         "capture_countdown_seconds": db.get_setting("capture_countdown_seconds", 5),
         "frame_overlay_display": db.get_setting("frame_overlay_display", "both"),
         # Shape of the print, so the Kiosk viewport and the capture match the

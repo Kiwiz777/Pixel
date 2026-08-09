@@ -44,8 +44,10 @@ function toggleForm() {
 function exportCsv() {
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
   const rows = [
-    ['Name', 'Phone', 'Source', 'Received'],
-    ...contacts.value.map((c) => [c.name, c.phone, c.source, c.created_at]),
+    ['Name', 'Job title', 'Company', 'Phone', 'Email', 'Source', 'Received'],
+    ...contacts.value.map((c) => [
+      c.name, c.job_title, c.company, c.phone, c.email, c.source, c.created_at,
+    ]),
   ]
   const blob = new Blob([rows.map((r) => r.map(esc).join(',')).join('\n')], {
     type: 'text/csv;charset=utf-8',
@@ -108,7 +110,9 @@ onMounted(load)
           <thead class="text-slate-400">
             <tr class="border-b border-white/10">
               <th scope="col" class="py-2 pr-4 font-display font-semibold">Name</th>
+              <th scope="col" class="py-2 pr-4 font-display font-semibold">Role</th>
               <th scope="col" class="py-2 pr-4 font-display font-semibold">Phone</th>
+              <th scope="col" class="py-2 pr-4 font-display font-semibold">Email</th>
               <th scope="col" class="py-2 pr-4 font-display font-semibold">Via</th>
               <th scope="col" class="py-2 pr-4 font-display font-semibold">Received</th>
               <th scope="col" class="py-2"><span class="sr-only">Actions</span></th>
@@ -117,8 +121,18 @@ onMounted(load)
           <tbody>
             <tr v-for="c in contacts" :key="c.id" class="border-b border-white/5">
               <td class="py-2.5 pr-4 text-slate-100">{{ c.name }}</td>
+              <td class="py-2.5 pr-4 text-slate-300">
+                <span v-if="c.job_title || c.company">
+                  {{ [c.job_title, c.company].filter(Boolean).join(' · ') }}
+                </span>
+                <span v-else class="text-slate-500">—</span>
+              </td>
               <td class="py-2.5 pr-4 tabular-nums">
                 <a v-if="c.phone" :href="`tel:${c.phone}`" class="hover:text-electric-300">{{ c.phone }}</a>
+                <span v-else class="text-slate-500">—</span>
+              </td>
+              <td class="py-2.5 pr-4">
+                <a v-if="c.email" :href="`mailto:${c.email}`" class="hover:text-electric-300">{{ c.email }}</a>
                 <span v-else class="text-slate-500">—</span>
               </td>
               <td class="py-2.5 pr-4 text-slate-400">{{ c.source === 'voice' ? 'Voice' : 'Typed' }}</td>

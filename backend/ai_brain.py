@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -426,25 +427,109 @@ async def list_voices() -> dict[str, Any]:
 # Speech-to-Text (OpenAI Whisper by default)
 # --------------------------------------------------------------------------
 async def speech_to_text(audio_bytes: bytes, *, filename: str = "speech.webm",
-                         language: str | None = None) -> str:
+                         language: str | None = None,
+                         prompt: str | None = None) -> dict[str, Any]:
     provider = db.get_setting("stt_provider", "openai")
     if provider != "openai":
         raise AIError(f"STT provider '{provider}' not implemented.")
     api_key = db.get_setting("api_key_openai")
     if not api_key:
         raise AIError("No OpenAI API key configured for speech-to-text.")
+    model = db.get_setting("stt_model", "gpt-4o-mini-transcribe")
     files = {"file": (filename, audio_bytes, "application/octet-stream")}
-    data: dict[str, str] = {"model": "whisper-1"}
-    # Whisper wants ISO-639-1; strip our region suffix (ar-EG -> ar).
-    if language:
-        data["language"] = language.split("-")[0]
+    data: dict[str, str] = {"model": model}
+
+    # The two model families take different parameters, and sending the wrong
+    # ones is a 400. whisper-1 is the legacy path: it is the only one that
+    # returns verbose_json (duration + detected language, which the kiosk
+    # diagnostics show) and the only one that accepts temperature.
+    if model == "whisper-1":
+        # Greedy decoding. Left at the default, Whisper samples and will invent
+        # text to fill near-silence.
+        data["temperature"] = "0"
+        data["response_format"] = "verbose_json"
+        # Whisper wants ISO-639-1; strip our region suffix (ar-EG -> ar).
+        if language:
+            data["language"] = language.split("-")[0]
+    else:
+        # gpt-4o-*-transcribe: json only, no temperature.
+        data["response_format"] = "json"
+        # Auto-detection is good, but an explicit hint beats it - and the kiosk
+        # only sends one when the guest (or the Admin) actually chose a
+        # language. No hint means we genuinely don't know, so let it detect.
+        if language:
+            data["language"] = language.split("-")[0]
+
+    # Optional context bias - proper nouns and setting cut misrecognition
+    # considerably. Supported on both families. A per-request prompt (e.g. from
+    # the contact form) wins over the global Admin one.
+    hint = (prompt or str(db.get_setting("stt_prompt", "") or "")).strip()
+    if hint:
+        data["prompt"] = hint[:800]
+
     r = await _http().post(
         "https://api.openai.com/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {api_key}"},
         data=data, files=files,
     )
-    _raise_for_status(r, "whisper")
-    return r.json().get("text", "").strip()
+    _raise_for_status(r, "stt")
+    payload = r.json()
+    raw = (payload.get("text") or "").strip()
+    kept = _drop_hallucination(raw)
+    return {
+        "text": kept,
+        "raw": raw,                                    # what the model said pre-filter
+        "filtered": bool(raw) and not kept,            # True = boilerplate was dropped
+        "model": model,
+        # verbose_json only; absent on the gpt-4o models.
+        "language": payload.get("language") or "",
+        "duration": round(float(payload.get("duration") or 0), 2),
+    }
+
+
+_DIACRITICS = re.compile(r"[ً-ْٰ]")
+_PUNCT = re.compile(r"[^\w\s؀-ۿ♪]", re.UNICODE)
+
+
+def _normalise(text: str) -> str:
+    """Fold Arabic orthography + punctuation so the blocklist matches variants."""
+    out = _DIACRITICS.sub("", text.lower().strip())
+    for src, dst in (("أ", "ا"), ("إ", "ا"), ("آ", "ا"), ("ة", "ه"), ("ى", "ي")):
+        out = out.replace(src, dst)
+    out = _PUNCT.sub("", out)
+    return " ".join(out.split())
+
+
+# Whisper was trained on a lot of YouTube subtitles, so when it is handed
+# silence or noise it emits the most common phrases from that data. These are
+# the usual ones. Matching is against the WHOLE normalised transcript, so a
+# guest who genuinely says "thanks" is unaffected.
+_RAW_HALLUCINATIONS = {
+    # Arabic
+    "اشتركوا في القناه", "اشتركوا في القناه ولا تنسوا تفعيل الجرس",
+    "شكرا على المشاهده", "شكرا لكم على المشاهده", "شكرا للمشاهده",
+    "لا تنسى الاشتراك في القناه", "الى اللقاء في الفيديو القادم",
+    "اراكم في الفيديو القادم", "ترجمه نانسي قنقر", "المزيد من الفيديوهات",
+    "انتهى الفيديو", "ترجمه",
+    # English
+    "thanks for watching", "thank you for watching", "thanks for watching!",
+    "please subscribe", "subscribe to my channel", "like and subscribe",
+    "see you in the next video", "you", "bye", "thank you", "thank you.",
+    # Non-speech markers
+    "[music]", "(music)", "♪", "♪♪", "[silence]", "[applause]",
+}
+
+# Normalised at import: the entries must go through the same folding as the
+# transcript, or variants like "على" -> "علي" and "[music]" -> "music" never match.
+_HALLUCINATIONS = frozenset(_normalise(p) for p in _RAW_HALLUCINATIONS)
+
+
+def _drop_hallucination(text: str) -> str:
+    if not text:
+        return text
+    if _normalise(text) in _HALLUCINATIONS:
+        return ""
+    return text
 
 
 # --------------------------------------------------------------------------

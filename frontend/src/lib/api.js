@@ -103,10 +103,14 @@ export const api = {
     request('POST', '/api/quiz/voucher-email', { body: { label, code, email } }),
   voucherPrint: (label, code) =>
     request('POST', '/api/quiz/voucher-print', { body: { label, code } }),
-  stt: (blob, language) => {
+  stt: (blob, language, prompt) => {
     const fd = new FormData()
-    fd.append('file', blob, 'speech.webm')
+    // Extension must match the recorded container or the decode guesses wrong.
+    const ext = (blob.type || '').includes('ogg') ? 'ogg' : 'webm'
+    fd.append('file', blob, `speech.${ext}`)
     if (language) fd.append('language', language)
+    // Per-screen recognition bias (the contact form describes what it expects).
+    if (prompt) fd.append('prompt', prompt)
     return request('POST', '/api/ai/stt', { body: fd, isForm: true })
   },
 

@@ -26,7 +26,11 @@ const form = reactive({
   active_image_provider: 'openai', active_image_model: '',
   tts_provider: 'openai', openai_tts_model: 'gpt-4o-mini-tts',
   openai_tts_voice: 'alloy', tts_voice_id: '',
+  stt_model: 'gpt-4o-mini-transcribe', stt_prompt: '',
 })
+// whisper-1 is OpenAI's legacy transcription model; keep it selectable for
+// the verbose_json diagnostics (duration + detected language) it alone returns.
+const STT_MODELS = ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1']
 const OPENAI_TTS_MODELS = ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd']
 const OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer']
 const voices = ref({
@@ -186,6 +190,43 @@ function save() {
       </div>
 
       <p v-if="voiceMsg" class="hint">{{ voiceMsg }}</p>
+    </div>
+
+    <!-- Speech-to-text -->
+    <div class="glass-card p-5 sm:p-6 mt-5">
+      <h2 class="font-display text-lg font-semibold mb-3">Hearing (Speech-to-Text)</h2>
+
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="label" for="sttmodel">Transcription model</label>
+          <select id="sttmodel" v-model="form.stt_model" class="field" aria-describedby="sttmodel-hint">
+            <option v-for="m in STT_MODELS" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <p id="sttmodel-hint" class="hint mt-1">
+            <template v-if="form.stt_model === 'whisper-1'">
+              Legacy model. Higher error rate on dialect speech, but the only one
+              reporting audio duration and detected language to the diagnostics panel.
+            </template>
+            <template v-else>
+              Lower word error rate and better language recognition than whisper-1.
+            </template>
+          </p>
+        </div>
+
+        <div>
+          <label class="label" for="sttprompt">Context hint (optional)</label>
+          <input
+            id="sttprompt"
+            v-model="form.stt_prompt"
+            class="field"
+            placeholder="e.g. A guest chatting with a photobooth robot called Pixel"
+            aria-describedby="sttprompt-hint"
+          />
+          <p id="sttprompt-hint" class="hint mt-1">
+            Names and setting, to cut misheard proper nouns. Leave blank if unsure.
+          </p>
+        </div>
+      </div>
     </div>
 
     <div class="mt-5 flex justify-end">

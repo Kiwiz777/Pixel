@@ -99,6 +99,20 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # generating, and TTS cost scales with character count. ~120 tokens is
     # 2-3 spoken sentences, which is all a photobooth greeting needs.
     "chat_max_tokens": 120,
+    # --- Speech-to-text ---
+    # whisper-1 is OpenAI's legacy transcription model; the gpt-4o transcribe
+    # models have a materially lower word error rate and better language
+    # recognition, which matters most for dialect Arabic.
+    "stt_model": "gpt-4o-mini-transcribe",
+    # Optional context bias sent with the audio (proper nouns, setting).
+    "stt_prompt": "",
+    # Keep each recording sent to STT so it can be replayed from the
+    # diagnostics panel. Bounded, because this writes to the Pi's SD card.
+    "stt_keep_recordings": True,
+    "stt_recordings_keep": 60,
+    # --- Diagnostics (on-screen overlays for on-site debugging) ---
+    "diag_show_conversation": False,              # transcript + STT + mic level
+    "diag_show_ai_latency": False,                # per-request timings
     # --- Contact us ---
     "contact_form_enabled": True,                 # show the Contact us button on the kiosk
     # --- Photobooth / capture ---
@@ -199,6 +213,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL,
     phone      TEXT NOT NULL DEFAULT '',
+    email      TEXT NOT NULL DEFAULT '',
+    job_title  TEXT NOT NULL DEFAULT '',
+    company    TEXT NOT NULL DEFAULT '',
     note       TEXT NOT NULL DEFAULT '',
     source     TEXT NOT NULL DEFAULT 'form',   -- form|voice
     created_at TEXT NOT NULL
@@ -226,6 +243,11 @@ def init_db() -> None:
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
         if "is_admin" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        # Contacts gained email/job title/company after first release.
+        ccols = {r["name"] for r in conn.execute("PRAGMA table_info(contacts)")}
+        for col in ("email", "job_title", "company"):
+            if col not in ccols:
+                conn.execute(f"ALTER TABLE contacts ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
         # Seed any missing default settings.
         existing = {row["key"] for row in conn.execute("SELECT key FROM settings")}
         now = _utcnow()
@@ -309,16 +331,22 @@ def update_settings(values: dict[str, Any]) -> None:
 # --------------------------------------------------------------------------
 # Contacts (kiosk "Contact us" form)
 # --------------------------------------------------------------------------
-def create_contact(name: str, phone: str = "", note: str = "",
-                   source: str = "form") -> dict[str, Any]:
-    now = _utcnow()
+def create_contact(name: str, phone: str = "", note: str = "", source: str = "form",
+                   email: str = "", job_title: str = "", company: str = "") -> dict[str, Any]:
+    row = {
+        "name": name.strip(), "phone": phone.strip(), "email": email.strip(),
+        "job_title": job_title.strip(), "company": company.strip(),
+        "note": note.strip(), "source": source, "created_at": _utcnow(),
+    }
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO contacts(name, phone, note, source, created_at) VALUES (?,?,?,?,?)",
-            (name.strip(), phone.strip(), note.strip(), source, now),
+            """INSERT INTO contacts(name, phone, email, job_title, company, note,
+                                    source, created_at)
+               VALUES (:name, :phone, :email, :job_title, :company, :note,
+                       :source, :created_at)""",
+            row,
         )
-        return {"id": cur.lastrowid, "name": name.strip(), "phone": phone.strip(),
-                "note": note.strip(), "source": source, "created_at": now}
+        return {"id": cur.lastrowid, **row}
 
 
 def list_contacts(limit: int = 500) -> list[dict[str, Any]]:

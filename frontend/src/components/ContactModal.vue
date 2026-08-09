@@ -23,7 +23,15 @@ const emit = defineEmits(['close'])
 
 const bot = useBot()
 
-const form = ref({ name: '', phone: '' })
+const form = ref({ name: '', phone: '', email: '', job_title: '', company: '' })
+
+// Told to the transcription model before it decodes. Naming the field types is
+// what makes dictated proper nouns and spelled-out addresses land - without it
+// company names and emails come back as ordinary words.
+const STT_HINT =
+  'A guest is dictating their contact details at an event: full name, job title, ' +
+  'company or organisation name, phone number, and email address. Expect spelled-out ' +
+  'email addresses using "at" and "dot", and digits spoken one by one.'
 const activeField = ref('') // '' = keyboard hidden
 const listening = ref(false)
 const usedVoice = ref(false) // recorded with the submission so Admin can tell them apart
@@ -33,7 +41,11 @@ const error = ref('')
 const done = ref(false)
 
 const canSubmit = computed(() => form.value.name.trim().length > 0 && !saving.value)
-const keyboardLayout = computed(() => (activeField.value === 'phone' ? 'tel' : 'text'))
+const keyboardLayout = computed(() => {
+  if (activeField.value === 'phone') return 'tel'
+  if (activeField.value === 'email') return 'email' // adds @ . and a .com key
+  return 'text'
+})
 
 function openKeyboard(field) {
   activeField.value = field
@@ -54,30 +66,40 @@ function onBackspace() {
 async function speak() {
   if (listening.value) return
   error.value = ''
-  status.value = 'Listening… say your name and number'
+  status.value = 'Listening… say your name, company and number'
   listening.value = true
   activeField.value = '' // the keyboard would only get in the way
   try {
-    const text = await bot.listenOnce(props.language)
+    const text = await bot.listenOnce(props.language, STT_HINT)
     if (!text) {
       status.value = ''
-      error.value = "Didn't catch that — try again or type it in."
+      // listenOnce returns null for three different reasons and they need
+      // different advice - a connection failure is not "speak up".
+      error.value = {
+        'no-speech': "I didn't hear anything — tap Speak it and talk after the beep.",
+        network: 'There was a problem sending your voice. Check the connection, or type it in.',
+      }[bot.listenIssue.value] || "I couldn't make that out — try again, or type it in."
       return
     }
     status.value = 'Got it, reading that back…'
     const parsed = await api.parseContact(text)
-    if (parsed.name) form.value.name = parsed.name
-    if (parsed.phone) form.value.phone = parsed.phone
-    if (parsed.name || parsed.phone) usedVoice.value = true
-    status.value = parsed.name || parsed.phone
-      ? 'Check it looks right, then send.'
-      : ''
-    if (!parsed.name && !parsed.phone) {
-      error.value = `Heard "${text}" but couldn't find a name or number in it.`
+    // Only overwrite fields the model actually found, so a second pass can add
+    // details without wiping what the guest already typed or dictated.
+    const FIELDS = ['name', 'phone', 'email', 'job_title', 'company']
+    const found = FIELDS.filter((f) => parsed[f])
+    found.forEach((f) => (form.value[f] = parsed[f]))
+
+    if (found.length) {
+      usedVoice.value = true
+      status.value = 'Check it looks right, then send.'
+    } else {
+      status.value = ''
+      error.value = `Heard "${text}" but couldn't pick out any contact details.`
     }
   } catch (e) {
+    // Thrown here means the parse call failed, not the recording.
     status.value = ''
-    error.value = e.message || 'Voice input failed.'
+    error.value = e.message || 'There was a problem sending your voice — please try again.'
   } finally {
     listening.value = false
   }
@@ -91,6 +113,9 @@ async function submit() {
     await api.submitContact({
       name: form.value.name.trim(),
       phone: form.value.phone.trim(),
+      email: form.value.email.trim(),
+      job_title: form.value.job_title.trim(),
+      company: form.value.company.trim(),
       source: usedVoice.value ? 'voice' : 'form',
     })
     done.value = true
@@ -152,6 +177,51 @@ async function submit() {
               placeholder="Tap to type"
               @focus="openKeyboard('phone')"
             />
+          </div>
+
+          <div>
+            <label class="label" for="contact-email">
+              Email <span class="text-slate-500 font-normal">(optional)</span>
+            </label>
+            <input
+              id="contact-email"
+              v-model="form.email"
+              class="field"
+              :class="activeField === 'email' ? 'ring-2 ring-electric-400' : ''"
+              type="email"
+              inputmode="email"
+              autocomplete="email"
+              placeholder="Tap to type"
+              @focus="openKeyboard('email')"
+            />
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="label" for="contact-job">Job title</label>
+              <input
+                id="contact-job"
+                v-model="form.job_title"
+                class="field"
+                :class="activeField === 'job_title' ? 'ring-2 ring-electric-400' : ''"
+                autocomplete="organization-title"
+                placeholder="Tap to type"
+                @focus="openKeyboard('job_title')"
+              />
+            </div>
+
+            <div>
+              <label class="label" for="contact-company">Company</label>
+              <input
+                id="contact-company"
+                v-model="form.company"
+                class="field"
+                :class="activeField === 'company' ? 'ring-2 ring-electric-400' : ''"
+                autocomplete="organization"
+                placeholder="Tap to type"
+                @focus="openKeyboard('company')"
+              />
+            </div>
           </div>
         </div>
 
