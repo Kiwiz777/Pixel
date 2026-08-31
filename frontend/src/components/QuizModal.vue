@@ -36,11 +36,14 @@ const question = computed(() => quiz.value?.questions?.[index.value] || null)
 const total = computed(() => quiz.value?.questions?.length || 0)
 const isLast = computed(() => index.value >= total.value - 1)
 const answeredCount = computed(() => Object.values(answers).filter((a) => a && a.length).length)
+// A quiz with no questions is "instant reward": nothing to answer, guest
+// always passes — the kiosk skips straight from intro to the reward.
+const hasQuestions = computed(() => total.value > 0)
 
 onMounted(async () => {
   try {
     const res = await api.activeQuiz()
-    if (!res.quiz || !res.quiz.questions?.length) {
+    if (!res.quiz) {
       errorMsg.value = 'No quiz is available right now.'
       stage.value = 'error'
       return
@@ -61,6 +64,10 @@ function start() {
   voucherMsg.value = ''
   voucherEmailInput.value = ''
   index.value = 0
+  if (!hasQuestions.value) {
+    finish()
+    return
+  }
   stage.value = 'quiz'
 }
 
@@ -129,7 +136,7 @@ function rewardTitle(rw) {
       // Label/name only — never the code (matters on the spinning wheel).
       return rw.label || rw.voucher_text || 'A voucher'
     case 'image':
-      return 'A special prize'
+      return rw.label || 'A special prize'
     default:
       return 'A prize'
   }
@@ -194,13 +201,14 @@ async function printVoucher() {
 
       <!-- Intro -->
       <div v-else-if="stage === 'intro'" class="text-center py-4">
-        <div class="mx-auto mb-4 h-16 w-16 rounded-2xl bg-brand-500/20 grid place-items-center text-3xl">🎯</div>
+        <div class="mx-auto mb-4 h-16 w-16 rounded-2xl bg-brand-500/20 grid place-items-center text-3xl">{{ hasQuestions ? '🎯' : '🎁' }}</div>
         <h2 class="font-display text-3xl font-semibold">{{ quiz.title }}</h2>
         <p v-if="quiz.description" class="text-slate-300 mt-2 max-w-md mx-auto">{{ quiz.description }}</p>
-        <p class="hint mt-3">{{ total }} question{{ total > 1 ? 's' : '' }} · score {{ quiz.pass_score }}% or more to win a reward.</p>
+        <p v-if="hasQuestions" class="hint mt-3">{{ total }} question{{ total > 1 ? 's' : '' }} · score {{ quiz.pass_score }}% or more to win a reward.</p>
+        <p v-else class="hint mt-3">Tap below to reveal your reward!</p>
         <div class="flex justify-center gap-3 mt-7">
           <button class="btn-ghost text-lg px-6 py-3" @click="emit('close')">Not now</button>
-          <button class="btn-primary text-lg px-7 py-3" @click="start">Start quiz</button>
+          <button class="btn-primary text-lg px-7 py-3" @click="start">{{ hasQuestions ? 'Start quiz' : 'Reveal my reward' }}</button>
         </div>
       </div>
 
@@ -253,7 +261,7 @@ async function printVoucher() {
       <!-- Submitting -->
       <div v-else-if="stage === 'submitting'" class="py-16 grid place-items-center text-center">
         <div class="h-10 w-10 rounded-full border-2 border-electric-400 border-t-transparent animate-spin mb-4"></div>
-        <p class="font-display text-electric-300">Scoring your answers…</p>
+        <p class="font-display text-electric-300">{{ hasQuestions ? 'Scoring your answers…' : 'Getting your reward ready…' }}</p>
       </div>
 
       <!-- Result -->
@@ -262,7 +270,7 @@ async function printVoucher() {
         <template v-if="result.passed">
           <div class="mx-auto mb-3 h-16 w-16 rounded-2xl bg-emerald-500/20 grid place-items-center text-3xl">🎉</div>
           <h2 class="font-display text-3xl font-semibold text-emerald-300">You won!</h2>
-          <p v-if="!spinning" class="text-slate-300 mt-1">Score: {{ result.score }}% ({{ result.correct_count }}/{{ result.total }})</p>
+          <p v-if="!spinning && result.total > 0" class="text-slate-300 mt-1">Score: {{ result.score }}% ({{ result.correct_count }}/{{ result.total }})</p>
 
           <!-- Prize wheel (only while spinning; fades out to reveal the reward) -->
           <transition name="wheel">
@@ -283,8 +291,11 @@ async function printVoucher() {
           <!-- Reward reveal -->
           <div v-if="!spinning" class="mt-5">
             <!-- image prize -->
-            <div v-if="reward?.type === 'image'" class="rounded-2xl overflow-hidden bg-ink-900 max-w-md mx-auto">
-              <img v-if="reward.image_path" :src="`/media/rewards/${reward.image_path}`" alt="Your prize" class="w-full object-contain" />
+            <div v-if="reward?.type === 'image'" class="max-w-md mx-auto">
+              <p v-if="reward.label" class="font-display text-xl text-brand-200 mb-2">{{ reward.label }}</p>
+              <div class="rounded-2xl overflow-hidden bg-ink-900">
+                <img v-if="reward.image_path" :src="`/media/rewards/${reward.image_path}`" alt="Your prize" class="w-full object-contain" />
+              </div>
             </div>
 
             <!-- voucher -->

@@ -43,6 +43,9 @@ async def public_settings():
         "face_recognition_enabled": db.get_setting("face_recognition_enabled", True),
         "quiz_enabled": db.get_setting("quiz_enabled", True),
         "active_quiz_id": db.get_setting("active_quiz_id"),
+        # Lets the kiosk pick "Take the Quiz" vs "Get a Reward" for the button
+        # without fetching the full quiz first.
+        "active_quiz_has_questions": bool((db.get_active_quiz() or {}).get("questions")),
         "kiosk_camera_autostart": db.get_setting("kiosk_camera_autostart", True),
         "camera_idle_off_seconds": db.get_setting("camera_idle_off_seconds", 0),
         "camera_off_after_session": db.get_setting("camera_off_after_session", False),

@@ -358,7 +358,9 @@ onMounted(load)
                   class="shrink-0 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-300 px-2 py-0.5"
                 >LIVE</span>
               </div>
-              <p class="hint !mt-0.5">{{ q.questions.length }} question(s) · pass {{ q.pass_score }}%</p>
+              <p class="hint !mt-0.5">
+                {{ q.questions.length ? `${q.questions.length} question(s) · pass ${q.pass_score}%` : 'Instant reward — no questions' }}
+              </p>
             </button>
           </li>
         </ul>
@@ -387,7 +389,9 @@ onMounted(load)
             </div>
             <div>
               <label class="label" for="qpass">Pass score (%)</label>
-              <input id="qpass" v-model.number="draft.pass_score" type="number" min="0" max="100" class="field max-w-[8rem]" />
+              <input id="qpass" v-model.number="draft.pass_score" type="number" min="0" max="100" class="field max-w-[8rem]"
+                     :disabled="!draft.questions.length" />
+              <p v-if="!draft.questions.length" class="hint">Unused — no questions means an automatic win.</p>
             </div>
           </div>
           <div class="mt-4">
@@ -413,7 +417,11 @@ onMounted(load)
             </div>
           </div>
 
-          <p v-if="!draft.questions.length" class="hint mb-3">No questions yet. Add one or import a CSV.</p>
+          <p v-if="!draft.questions.length" class="hint mb-3">
+            No questions — this is an <strong class="text-slate-200">instant-reward quiz</strong>: on the kiosk the
+            button reads “Get a Reward” and guests get the reward below immediately, no quiz screen at all.
+            Add a question (or import a CSV) if you want an actual quiz instead.
+          </p>
 
           <div class="space-y-4">
             <div v-for="(q, qi) in draft.questions" :key="q.id" class="rounded-2xl border border-white/10 p-4 bg-white/[0.03]">

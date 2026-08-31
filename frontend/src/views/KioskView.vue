@@ -65,6 +65,10 @@ const showQuiz = ref(false)
 const showContact = ref(false)
 const rewardSession = ref(null) // reward config applied to the next capture
 const quizAvailable = computed(() => settings.value.quiz_enabled && settings.value.active_quiz_id != null)
+// A quiz with no questions is "instant reward" — the button should say so
+// rather than promising a quiz that never actually asks anything.
+const quizIsInstantReward = computed(() => quizAvailable.value && settings.value.active_quiz_has_questions === false)
+const quizButtonLabel = computed(() => (quizIsInstantReward.value ? 'Get a Reward' : 'Take the Quiz'))
 // Width/height of the paper, from Admin. 0 means "auto" - the printer fits and
 // rotates the photo itself, so nothing is cropped and there is no target shape.
 const printAspect = computed(() => Number(settings.value.capture_aspect) || 0)
@@ -577,7 +581,9 @@ onBeforeUnmount(() => {
       <div class="grid place-items-center gap-4 w-full">
       <transition name="fade">
         <p v-if="!cam.active.value" class="font-display text-lg sm:text-xl text-slate-100 text-center px-6">
-          {{ quizAvailable ? 'Ready when you are — take the quiz or snap a photo' : 'Tap Capture Photo to open the camera' }}
+          {{ quizAvailable
+            ? (quizIsInstantReward ? 'Ready when you are — grab your reward or snap a photo' : 'Ready when you are — take the quiz or snap a photo')
+            : 'Tap Capture Photo to open the camera' }}
         </p>
       </transition>
       <!-- Wraps: with quiz, contact and talk all enabled this is four large
@@ -599,8 +605,9 @@ onBeforeUnmount(() => {
           class="btn-ghost text-lg px-7 py-4"
           @click="showQuiz = true"
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 17h.01" stroke-linecap="round"/></svg>
-          Take the Quiz
+          <svg v-if="quizIsInstantReward" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="13" rx="1"/><path d="M12 8v13M3 8h18M12 8c-1.5-3-3.5-4-5-3s-1 3 1 3M12 8c1.5-3 3.5-4 5-3s1 3-1 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg v-else width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 17h.01" stroke-linecap="round"/></svg>
+          {{ quizButtonLabel }}
         </button>
 
         <button

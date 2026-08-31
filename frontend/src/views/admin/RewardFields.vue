@@ -6,7 +6,7 @@
  *   { type: 'prints'|'ai_enhance'|'image'|'voucher'|'wheel'|'none',
  *     photos_count, prints_count,                       // prints
  *     enhance_count, prompt_mode, prompt, prompt_list[], // ai_enhance
- *     image_path,                                        // image
+ *     image_path, label,                                  // image (label = prize name)
  *     voucher_text,                                      // voucher
  *     segments[], weight, color,                         // wheel / segment odds + color
  *     max_uses, used_count }                             // inventory (0/unset max_uses = unlimited)
@@ -134,17 +134,26 @@ async function uploadImage(e) {
     </div>
 
     <!-- image -->
-    <div v-else-if="r.type === 'image'" class="flex gap-4 items-start">
-      <div class="w-32 h-32 rounded-2xl border border-dashed border-white/20 grid place-items-center bg-ink-900 overflow-hidden shrink-0">
-        <img v-if="r.image_path" :src="`/media/rewards/${r.image_path}`" alt="Reward image" class="max-h-full max-w-full object-contain" />
-        <span v-else class="hint text-center px-2">No image</span>
+    <div v-else-if="r.type === 'image'" class="space-y-3">
+      <div>
+        <label class="label">Prize name</label>
+        <input class="field max-w-sm" :value="r.label || ''"
+               placeholder="e.g. Free coffee coupon"
+               @input="patch({ label: $event.target.value })" />
+        <p class="hint">Shown as the prize's title (wheel segment label, reward reveal). The image itself is shown too.</p>
       </div>
-      <div class="flex-1">
-        <label class="btn-ghost btn-sm cursor-pointer inline-flex">
-          <input type="file" accept="image/*" class="hidden" @change="uploadImage" />
-          Upload winner image
-        </label>
-        <p class="hint">Shown full-screen to the winner (e.g. a coupon or a “You won!” graphic).</p>
+      <div class="flex gap-4 items-start">
+        <div class="w-32 h-32 rounded-2xl border border-dashed border-white/20 grid place-items-center bg-ink-900 overflow-hidden shrink-0">
+          <img v-if="r.image_path" :src="`/media/rewards/${r.image_path}`" alt="Reward image" class="max-h-full max-w-full object-contain" />
+          <span v-else class="hint text-center px-2">No image</span>
+        </div>
+        <div class="flex-1">
+          <label class="btn-ghost btn-sm cursor-pointer inline-flex">
+            <input type="file" accept="image/*" class="hidden" @change="uploadImage" />
+            Upload winner image
+          </label>
+          <p class="hint">Shown full-screen to the winner (e.g. a coupon or a “You won!” graphic).</p>
+        </div>
       </div>
     </div>
 
@@ -229,7 +238,7 @@ async function uploadImage(e) {
         no reset needed. “Reset usage counts” above zeroes the used count instead.
       </p>
       <p v-if="r.max_uses && (r.used_count ?? 0) >= r.max_uses" class="hint text-amber-300 mt-1">
-        Out of stock — this reward is skipped until you raise the limit or reset usage.
+        Out of stock — hidden from the wheel (or skipped) until you raise the limit or reset usage.
       </p>
     </div>
   </div>

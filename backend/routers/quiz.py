@@ -70,26 +70,35 @@ def _has_stock(reward: dict[str, Any]) -> bool:
 
 def _resolve_reward(
     reward: dict[str, Any],
-) -> tuple[dict[str, Any], list[dict[str, Any]] | None, int | None]:
+) -> tuple[dict[str, Any], list[dict[str, Any]] | None, int | None, int | None]:
     """Resolve the reward a winner receives.
 
     For a prize wheel we pick one segment (respecting an optional integer
-    `weight`), skipping any segment that's out of stock, and also return the
-    full segment list + the winning index so the kiosk can animate the wheel
-    landing on the chosen one. If every segment (or the sole non-wheel
-    reward) is out of stock, no reward is given even though the guest passed.
+    `weight`) from only the segments that still have stock — an out-of-stock
+    segment is dropped from the wheel entirely, not just from the odds, so it
+    stops appearing to spinners once it runs out. If every segment (or the
+    sole non-wheel reward) is out of stock, no reward is given even though
+    the guest passed.
+
+    Returns (reward, display_segments, wheel_index, raw_segment_index):
+      - display_segments / wheel_index: the in-stock-only list (and the
+        winner's position in it) the kiosk should render and animate onto.
+      - raw_segment_index: the winning segment's position in the *original*
+        (unfiltered) segments array, i.e. what increment_reward_usage needs
+        to bump the right one in storage.
     """
     if reward.get("type") == "wheel":
         segments = [s for s in reward.get("segments", []) if s]
         in_stock = [(i, s) for i, s in enumerate(segments) if _has_stock(s)]
         if not in_stock:
-            return {"type": "none"}, None, None
+            return {"type": "none"}, None, None, None
         weights = [max(1, int(s.get("weight", 1) or 1)) for _, s in in_stock]
-        index, seg = random.choices(in_stock, weights=weights, k=1)[0]
-        return seg, segments, index
+        pos = random.choices(range(len(in_stock)), weights=weights, k=1)[0]
+        raw_index, seg = in_stock[pos]
+        return seg, [s for _, s in in_stock], pos, raw_index
     if not _has_stock(reward):
-        return {"type": "none"}, None, None
-    return reward, None, None
+        return {"type": "none"}, None, None, None
+    return reward, None, None, None
 
 
 def _carry_usage(old_reward: dict[str, Any], new_reward: dict[str, Any]) -> dict[str, Any]:
@@ -141,9 +150,13 @@ async def create(payload: QuizUpsert, _: bool = Depends(require_admin)):
 
 @router.get("/active")
 async def active():
-    """Public: the active quiz for the kiosk (no correct-answer flags)."""
+    """Public: the active quiz for the kiosk (no correct-answer flags).
+
+    A quiz with zero questions is a valid "instant reward" quiz — the kiosk
+    skips straight to the reward instead of showing an empty question list.
+    """
     quiz = db.get_active_quiz()
-    if not quiz or not quiz.get("questions"):
+    if not quiz:
         return {"quiz": None}
     return {"quiz": _strip_answers(quiz)}
 
@@ -218,8 +231,9 @@ async def submit(payload: QuizSubmit):
         if picked and picked == _correct_ids(question):
             correct_count += 1
 
-    score = round((correct_count / total) * 100) if total else 0
-    passed = total > 0 and score >= int(quiz.get("pass_score", 70))
+    # A quiz with no questions is "instant reward": every guest passes.
+    score = round((correct_count / total) * 100) if total else 100
+    passed = True if total == 0 else score >= int(quiz.get("pass_score", 70))
 
     result: dict[str, Any] = {
         "passed": passed,
@@ -232,16 +246,16 @@ async def submit(payload: QuizSubmit):
         "wheel_index": None,
     }
     if passed:
-        reward, segments, index = _resolve_reward(quiz.get("reward", {}))
+        reward, segments, wheel_index, raw_index = _resolve_reward(quiz.get("reward", {}))
         result["reward"] = reward
-        result["wheel_index"] = index
+        result["wheel_index"] = wheel_index
         if segments is not None:
             # Wheel is display-only: never leak voucher codes onto the spinner.
             result["wheel_segments"] = [
                 {k: v for k, v in s.items() if k != "code"} for s in segments
             ]
         if reward.get("type") != "none":
-            db.increment_reward_usage(payload.quiz_id, index if segments is not None else None)
+            db.increment_reward_usage(payload.quiz_id, raw_index if segments is not None else None)
 
     db.add_log(
         "quiz",

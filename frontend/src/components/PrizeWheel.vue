@@ -55,8 +55,12 @@ const backgroundImageUrl = computed(() => props.theme?.background_image || '')
 const rotation = ref(0)
 const spinning = ref(false)
 const landed = ref(false)
+const confetti = ref([])
 let doneEmitted = false
 const timers = []
+
+const prefersReducedMotion =
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 const n = computed(() => Math.max(props.segments.length, 1))
 const seg = computed(() => 360 / n.value)
@@ -103,6 +107,38 @@ function labelTransform(i) {
 function grad(i) {
   return `grad${i % GRADIENTS.length}`
 }
+// Chasing marquee bulbs around the rim — the single biggest "alive, not
+// robotic" cue. Idle/spinning: they chase in sequence. Landed: synced flash.
+const BULB_COUNT = 20
+const bulbs = computed(() =>
+  Array.from({ length: BULB_COUNT }, (_, i) => {
+    const [x, y] = polar((360 / BULB_COUNT) * i, r.value - 2)
+    return { x, y, delay: (i / BULB_COUNT) * 1.2 }
+  }),
+)
+// A one-shot confetti burst from the hub when a winner lands. Colors lean on
+// the theme + winning segment so it stays on-brand instead of generic.
+function burstConfetti() {
+  if (prefersReducedMotion) return
+  const winColor = props.segments[props.winner]?.color
+  const colors = [glowColor1.value, glowColor2.value, pointerColor.value, hubAccentColor.value, winColor].filter(Boolean)
+  confetti.value = Array.from({ length: 20 }, (_, i) => {
+    const angle = Math.random() * 360
+    const dist = 60 + Math.random() * 90
+    const rad = (angle * Math.PI) / 180
+    return {
+      id: i,
+      tx: Math.cos(rad) * dist,
+      ty: Math.sin(rad) * dist,
+      rot: Math.random() * 360,
+      delay: Math.random() * 120,
+      dur: 700 + Math.random() * 500,
+      color: colors[i % colors.length],
+      size: 5 + Math.random() * 5,
+    }
+  })
+  timers.push(setTimeout(() => { confetti.value = [] }, 1500))
+}
 // Admin-set solid color (per segment) wins over the default gradient palette.
 function sliceFill(i) {
   return props.segments[i]?.color || `url(#${grad(i)})`
@@ -131,9 +167,11 @@ function labelLines(label) {
   return lines
 }
 
+// A touch of overshoot on the final settle (like a real wheel's pegs
+// clicking to a stop) instead of a flat mechanical deceleration.
 const transitionStyle = computed(() =>
   spinning.value
-    ? `transform ${props.spinMs}ms cubic-bezier(0.08, 0.62, 0.1, 1)`
+    ? `transform ${props.spinMs}ms cubic-bezier(0.15, 0.82, 0.22, 1.04)`
     : 'none',
 )
 
@@ -165,6 +203,7 @@ function onTransitionEnd() {
   if (!spinning.value || doneEmitted) return
   spinning.value = false
   landed.value = true
+  burstConfetti()
   // 3) hold on the winner, then let the parent reveal the reward.
   timers.push(setTimeout(() => {
     doneEmitted = true
@@ -204,8 +243,11 @@ onBeforeUnmount(clearTimers)
                      boxShadow: 'inset 0 1px 12px rgba(255,255,255,0.08)' }"></div>
     </template>
 
-    <!-- pointer -->
-    <div class="wheel-pointer absolute z-20" :style="{ borderTopColor: pointerColor }" aria-hidden="true"></div>
+    <!-- pointer: ticks like it's clicking past pegs while spinning -->
+    <div
+      class="wheel-pointer absolute z-20" :class="{ 'wheel-pointer-tick': spinning }"
+      :style="{ borderTopColor: pointerColor }" aria-hidden="true"
+    ></div>
 
     <svg
       :width="size" :height="size" :viewBox="`0 0 ${size} ${size}`"
@@ -236,6 +278,7 @@ onBeforeUnmount(clearTimers)
           :d="slicePath(i)" :fill="sliceFill(i)"
           :fill-opacity="sliceOpacity(i)"
           :stroke="borderColor" stroke-opacity="0.25" stroke-width="1.5"
+          :class="{ 'wheel-winner-pop': landed && i === winner }"
           :style="landed && i === winner ? 'filter: drop-shadow(0 0 12px rgba(255,255,255,0.6));' : ''"
         />
         <text
@@ -257,6 +300,14 @@ onBeforeUnmount(clearTimers)
       <circle :cx="r" :cy="r" :r="r - 3" fill="none" :stroke="borderColor" stroke-opacity="0.28" stroke-width="2" />
       <circle :cx="r" :cy="r" :r="r - 2" fill="none" stroke="#000000" stroke-opacity="0.35" stroke-width="3" />
 
+      <!-- marquee bulbs: chase while idle/spinning, flash together on landing -->
+      <circle
+        v-for="(b, bi) in bulbs" :key="`bulb${bi}`" :cx="b.x" :cy="b.y" r="2.6"
+        :fill="landed ? hubAccentColor : borderColor"
+        :class="landed ? 'wheel-bulb-flash' : 'wheel-bulb-chase'"
+        :style="!landed ? { animationDelay: `${b.delay}s` } : {}"
+      />
+
       <!-- hub -->
       <circle :cx="r" :cy="r" :r="hub + 4" :fill="borderColor" fill-opacity="0.85" />
       <circle :cx="r" :cy="r" :r="hub" fill="url(#hubGrad)" :stroke="hubAccentColor" stroke-width="2.5" />
@@ -270,6 +321,19 @@ onBeforeUnmount(clearTimers)
       class="absolute pointer-events-none z-10 object-contain"
       :style="{ width: `${size}px`, height: `${size}px`, top: '30px' }"
     />
+
+    <!-- one-shot confetti burst from the hub on landing -->
+    <div
+      v-for="p in confetti" :key="p.id"
+      class="wheel-confetti absolute z-30 pointer-events-none"
+      :style="{
+        left: `${r}px`, top: `${30 + r}px`,
+        width: `${p.size}px`, height: `${p.size * 1.6}px`,
+        background: p.color,
+        '--tx': `${p.tx}px`, '--ty': `${p.ty}px`, '--rot': `${p.rot}deg`,
+        animationDelay: `${p.delay}ms`, animationDuration: `${p.dur}ms`,
+      }"
+    ></div>
   </div>
 </template>
 
@@ -283,15 +347,67 @@ onBeforeUnmount(clearTimers)
   border-top-width: 26px;
   border-top-style: solid;
   filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55));
+  transform-origin: top center;
+}
+.wheel-pointer-tick {
+  animation: pointerTick 0.16s linear infinite;
+}
+@keyframes pointerTick {
+  0%, 100% { transform: rotate(-7deg); }
+  50% { transform: rotate(7deg); }
 }
 .wheel-glow {
-  animation: wheelPulse 1.6s ease-in-out infinite;
+  animation: wheelPulse 1.8s ease-in-out infinite;
 }
 @keyframes wheelPulse {
-  0%, 100% { filter: drop-shadow(0 0 6px var(--glow1, #f97316)); }
-  50% { filter: drop-shadow(0 0 20px var(--glow2, #38bdf8)); }
+  /* Subtle idle "breathing" so the wheel feels alive even before it spins. */
+  0%, 100% { filter: drop-shadow(0 0 6px var(--glow1, #f97316)); transform: rotate(0deg) scale(1); }
+  50% { filter: drop-shadow(0 0 20px var(--glow2, #38bdf8)); transform: rotate(0deg) scale(1.015); }
+}
+.wheel-bulb-chase {
+  animation: bulbChase 1.2s linear infinite;
+}
+@keyframes bulbChase {
+  0%, 100% { opacity: 0.22; }
+  8% { opacity: 1; }
+  16% { opacity: 0.22; }
+}
+.wheel-bulb-flash {
+  animation: bulbFlash 0.35s ease-in-out infinite;
+}
+@keyframes bulbFlash {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.wheel-winner-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: winnerPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes winnerPop {
+  0% { transform: scale(1); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1.03); }
+}
+.wheel-confetti {
+  border-radius: 1px;
+  opacity: 0;
+  animation-name: confettiBurst;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation-fill-mode: forwards;
+}
+@keyframes confettiBurst {
+  0% { transform: translate(-50%, -50%) translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) translate(var(--tx), var(--ty)) rotate(var(--rot)); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .wheel-glow { animation: none; }
+  .wheel-glow,
+  .wheel-pointer-tick,
+  .wheel-bulb-chase,
+  .wheel-bulb-flash,
+  .wheel-winner-pop,
+  .wheel-confetti {
+    animation: none;
+  }
 }
 </style>
