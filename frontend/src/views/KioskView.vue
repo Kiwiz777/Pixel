@@ -658,6 +658,7 @@ onBeforeUnmount(() => {
     <!-- quiz / MCQ modal -->
     <QuizModal
       v-if="showQuiz"
+      :wheel-style="settings.wheel_style"
       @close="showQuiz = false"
       @reward="onQuizReward"
     />

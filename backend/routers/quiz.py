@@ -60,23 +60,60 @@ def _strip_answers(quiz: dict[str, Any]) -> dict[str, Any]:
     return q
 
 
+def _has_stock(reward: dict[str, Any]) -> bool:
+    """True unless a `max_uses` limit is set and already reached (0/unset = unlimited)."""
+    max_uses = reward.get("max_uses")
+    if not max_uses:
+        return True
+    return int(reward.get("used_count", 0) or 0) < int(max_uses)
+
+
 def _resolve_reward(
     reward: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]] | None, int | None]:
     """Resolve the reward a winner receives.
 
     For a prize wheel we pick one segment (respecting an optional integer
-    `weight`) and also return the full segment list + the winning index so the
-    kiosk can animate the wheel landing on the chosen one.
+    `weight`), skipping any segment that's out of stock, and also return the
+    full segment list + the winning index so the kiosk can animate the wheel
+    landing on the chosen one. If every segment (or the sole non-wheel
+    reward) is out of stock, no reward is given even though the guest passed.
     """
     if reward.get("type") == "wheel":
         segments = [s for s in reward.get("segments", []) if s]
-        if not segments:
+        in_stock = [(i, s) for i, s in enumerate(segments) if _has_stock(s)]
+        if not in_stock:
             return {"type": "none"}, None, None
-        weights = [max(1, int(s.get("weight", 1) or 1)) for s in segments]
-        index = random.choices(range(len(segments)), weights=weights, k=1)[0]
-        return segments[index], segments, index
+        weights = [max(1, int(s.get("weight", 1) or 1)) for _, s in in_stock]
+        index, seg = random.choices(in_stock, weights=weights, k=1)[0]
+        return seg, segments, index
+    if not _has_stock(reward):
+        return {"type": "none"}, None, None
     return reward, None, None
+
+
+def _carry_usage(old_reward: dict[str, Any], new_reward: dict[str, Any]) -> dict[str, Any]:
+    """Preserve server-tracked `used_count`s across an admin edit.
+
+    The reward config is saved as one JSON blob, so a naive overwrite would
+    erase spins that happened between the admin loading the editor and
+    clicking Save. Usage only ever moves via increment_reward_usage /
+    reset_reward_usage — never through this general-purpose PUT.
+    """
+    merged = dict(new_reward)
+    if merged.get("type") == "wheel":
+        old_segments = old_reward.get("segments", []) if old_reward.get("type") == "wheel" else []
+        new_segments = [dict(s) if isinstance(s, dict) else s for s in merged.get("segments", [])]
+        for i, seg in enumerate(new_segments):
+            if not isinstance(seg, dict):
+                continue
+            old_seg = old_segments[i] if i < len(old_segments) and isinstance(old_segments[i], dict) else {}
+            seg["used_count"] = int(old_seg.get("used_count", 0) or 0)
+        merged["segments"] = new_segments
+    else:
+        same_type = old_reward.get("type") == merged.get("type")
+        merged["used_count"] = int(old_reward.get("used_count", 0) or 0) if same_type else 0
+    return merged
 
 
 # --------------------------------------------------------------------------
@@ -121,10 +158,13 @@ async def get_one(quiz_id: int, _: bool = Depends(require_admin)):
 
 @router.put("/{quiz_id}")
 async def update(quiz_id: int, payload: QuizUpsert, _: bool = Depends(require_admin)):
-    if not db.get_quiz(quiz_id):
+    existing = db.get_quiz(quiz_id)
+    if not existing:
         raise HTTPException(status_code=404, detail="Quiz not found")
     data = payload.model_dump(exclude_unset=True)
     activate = data.pop("is_active", None)
+    if "reward" in data:
+        data["reward"] = _carry_usage(existing.get("reward", {}), data["reward"] or {})
     if data:
         db.update_quiz(quiz_id, **data)
     if activate is True:
@@ -148,6 +188,15 @@ async def activate(quiz_id: int, _: bool = Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Quiz not found")
     db.set_active_quiz(quiz_id)
     return {"ok": True, "active_quiz_id": quiz_id}
+
+
+@router.post("/{quiz_id}/reset-usage")
+async def reset_usage(quiz_id: int, _: bool = Depends(require_admin)):
+    """Zero out the used/remaining counters on a reward (and its wheel segments)."""
+    if not db.get_quiz(quiz_id):
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    db.reset_reward_usage(quiz_id)
+    return {"ok": True, "quiz": db.get_quiz(quiz_id)}
 
 
 # --------------------------------------------------------------------------
@@ -191,6 +240,8 @@ async def submit(payload: QuizSubmit):
             result["wheel_segments"] = [
                 {k: v for k, v in s.items() if k != "code"} for s in segments
             ]
+        if reward.get("type") != "none":
+            db.increment_reward_usage(payload.quiz_id, index if segments is not None else None)
 
     db.add_log(
         "quiz",

@@ -65,6 +65,7 @@ app.mount("/media/frames", StaticFiles(directory=config.FRAMES_DIR), name="frame
 app.mount("/media/faces", StaticFiles(directory=config.FACES_DIR), name="faces")
 app.mount("/media/backgrounds", StaticFiles(directory=config.BACKGROUNDS_DIR), name="backgrounds")
 app.mount("/media/rewards", StaticFiles(directory=config.REWARDS_DIR), name="rewards")
+app.mount("/media/wheel", StaticFiles(directory=config.WHEEL_DIR), name="wheel")
 app.mount("/media/recordings", StaticFiles(directory=config.RECORDINGS_DIR), name="recordings")
 
 

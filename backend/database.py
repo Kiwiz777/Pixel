@@ -74,6 +74,28 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # --- Quiz / MCQ game ---
     "quiz_enabled": True,                         # show the "Take the Quiz" button on the kiosk
     "active_quiz_id": None,                        # which quiz the kiosk serves (nullable)
+    # Global prize-wheel look (shared by every quiz's wheel reward). Segment
+    # fill colors live per-segment in the quiz's reward JSON instead - this is
+    # just the wheel's chrome (pointer/hub/glow/border/labels/timing/size)
+    # plus optional custom frame/background art.
+    "wheel_style": {
+        "preset": "brand",             # brand | neon | mono | custom (label only; all fields below are custom-editable)
+        "segment_style": "glass",      # glass (translucent tint) | solid (opaque fill)
+        "pointer_color": "#F97316",
+        "hub_color": "#0B1120",
+        "hub_accent_color": "#F97316",
+        "glow_color_1": "#F97316",
+        "glow_color_2": "#38BDF8",
+        "border_color": "#F8FAFC",
+        "label_font": "body",          # body (Nunito) | display (Fredoka)
+        "label_color": "#F8FAFC",
+        "size_px": 340,
+        "preroll_ms": 2000,
+        "spin_ms": 5600,
+        "hold_ms": 1300,
+        "frame_image": "",             # optional PNG under data/wheel, drawn over the wheel as a custom bezel
+        "background_image": "",        # optional PNG under data/wheel, drawn behind the wheel
+    },
     # When False, the kiosk main screen does NOT auto-start the webcam; it leads
     # with the buttons (e.g. "Take the Quiz") and starts the camera on demand.
     "kiosk_camera_autostart": True,
@@ -569,3 +591,51 @@ def set_active_quiz(quiz_id: int | None) -> None:
         if quiz_id is not None:
             conn.execute("UPDATE quizzes SET is_active=1, updated_at=? WHERE id=?", (now, quiz_id))
     set_setting("active_quiz_id", quiz_id)
+
+
+def increment_reward_usage(quiz_id: int, segment_index: int | None) -> None:
+    """Bump the `used_count` on a won reward (or one wheel segment) by 1.
+
+    Read-modify-write on the quiz's `reward` JSON blob, done inside a single
+    connection so it's not interleaved with another request on the same
+    process. Good enough for a single-kiosk workload (see get_conn docstring).
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT reward FROM quizzes WHERE id=?", (quiz_id,)).fetchone()
+        if not row:
+            return
+        try:
+            reward = json.loads(row["reward"]) if row["reward"] else {}
+        except Exception:
+            reward = {}
+        if segment_index is not None:
+            segments = reward.get("segments", [])
+            if 0 <= segment_index < len(segments) and isinstance(segments[segment_index], dict):
+                seg = segments[segment_index]
+                seg["used_count"] = int(seg.get("used_count", 0) or 0) + 1
+        else:
+            reward["used_count"] = int(reward.get("used_count", 0) or 0) + 1
+        conn.execute(
+            "UPDATE quizzes SET reward=?, updated_at=? WHERE id=?",
+            (json.dumps(reward), _utcnow(), quiz_id),
+        )
+
+
+def reset_reward_usage(quiz_id: int) -> None:
+    """Zero out `used_count` on the reward and every wheel segment."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT reward FROM quizzes WHERE id=?", (quiz_id,)).fetchone()
+        if not row:
+            return
+        try:
+            reward = json.loads(row["reward"]) if row["reward"] else {}
+        except Exception:
+            reward = {}
+        reward["used_count"] = 0
+        for seg in reward.get("segments", []) or []:
+            if isinstance(seg, dict):
+                seg["used_count"] = 0
+        conn.execute(
+            "UPDATE quizzes SET reward=?, updated_at=? WHERE id=?",
+            (json.dumps(reward), _utcnow(), quiz_id),
+        )

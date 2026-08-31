@@ -155,6 +155,7 @@ export const api = {
   updateQuiz: (id, body) => request('PUT', `/api/quiz/${id}`, { body, admin: true }),
   deleteQuiz: (id) => request('DELETE', `/api/quiz/${id}`, { admin: true }),
   activateQuiz: (id) => request('POST', `/api/quiz/${id}/activate`, { admin: true }),
+  resetRewardUsage: (id) => request('POST', `/api/quiz/${id}/reset-usage`, { admin: true }),
   importQuizCsv: (id, file) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -168,6 +169,11 @@ export const api = {
     const fd = new FormData()
     fd.append('file', file)
     return request('POST', '/api/quiz/reward-image', { body: fd, admin: true, isForm: true })
+  },
+  uploadWheelImage: (kind, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', `/api/settings/wheel-image/${kind}`, { body: fd, admin: true, isForm: true })
   },
 }
 

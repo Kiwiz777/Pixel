@@ -8,7 +8,8 @@
  *     enhance_count, prompt_mode, prompt, prompt_list[], // ai_enhance
  *     image_path,                                        // image
  *     voucher_text,                                      // voucher
- *     segments[], weight }                               // wheel / segment odds
+ *     segments[], weight, color,                         // wheel / segment odds + color
+ *     max_uses, used_count }                             // inventory (0/unset max_uses = unlimited)
  *
  * Controlled: never mutates the prop; every edit emits a fresh merged object.
  * Recurses into itself for prize-wheel segments (allowWheel=false there).
@@ -193,11 +194,43 @@ async function uploadImage(e) {
       <button class="btn-ghost btn-sm" @click="addSegment">+ Add wheel segment</button>
     </div>
 
-    <!-- odds (segments only) -->
-    <div v-if="showWeight" class="max-w-[8rem]">
-      <label class="label">Odds weight</label>
-      <input type="number" min="1" max="100" class="field" :value="r.weight ?? 1"
-             @input="patch({ weight: Number($event.target.value) })" />
+    <!-- odds + color (segments only) -->
+    <div v-if="showWeight" class="flex flex-wrap gap-4">
+      <div class="max-w-[8rem]">
+        <label class="label">Odds weight</label>
+        <input type="number" min="1" max="100" class="field" :value="r.weight ?? 1"
+               @input="patch({ weight: Number($event.target.value) })" />
+      </div>
+      <div class="max-w-[8rem]">
+        <label class="label">Wheel color</label>
+        <input type="color" class="field h-[42px] p-1 cursor-pointer" :value="r.color || '#F97316'"
+               @input="patch({ color: $event.target.value })" />
+      </div>
+    </div>
+
+    <!-- inventory: every concrete reward (incl. each wheel segment), not the wheel container itself -->
+    <div v-if="(r.type || 'prints') !== 'wheel'" class="pt-2 border-t border-white/10">
+      <div class="grid grid-cols-2 gap-4 max-w-md">
+        <div>
+          <label class="label">Max uses (0 = unlimited)</label>
+          <input type="number" min="0" class="field" :value="r.max_uses ?? 0"
+                 @input="patch({ max_uses: Number($event.target.value) })" />
+        </div>
+        <div>
+          <label class="label">Remaining</label>
+          <p class="field !bg-white/[0.03] flex items-center text-slate-300">
+            <template v-if="!r.max_uses">Unlimited</template>
+            <template v-else>{{ Math.max(0, r.max_uses - (r.used_count ?? 0)) }} of {{ r.max_uses }}</template>
+          </p>
+        </div>
+      </div>
+      <p class="hint mt-1">
+        Used so far: {{ r.used_count ?? 0 }}. Ran out? Raise “Max uses” and save — restocks it immediately,
+        no reset needed. “Reset usage counts” above zeroes the used count instead.
+      </p>
+      <p v-if="r.max_uses && (r.used_count ?? 0) >= r.max_uses" class="hint text-amber-300 mt-1">
+        Out of stock — this reward is skipped until you raise the limit or reset usage.
+      </p>
     </div>
   </div>
 </template>

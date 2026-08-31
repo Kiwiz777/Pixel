@@ -1,9 +1,13 @@
 """Admin settings + AI provider configuration endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import io
+import uuid
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 import ai_brain
+import config
 import database as db
 import image_processor
 from schemas import SettingsUpdate
@@ -61,6 +65,8 @@ async def public_settings():
         "kiosk_bg_media": db.get_setting("kiosk_bg_media", []),
         "kiosk_bg_slideshow_ms": db.get_setting("kiosk_bg_slideshow_ms", 6000),
         "kiosk_bg_dim": db.get_setting("kiosk_bg_dim", 35),
+        # Prize wheel look (global, shared by every quiz)
+        "wheel_style": db.get_setting("wheel_style", {}),
     }
 
 
@@ -68,3 +74,25 @@ async def public_settings():
 async def voices(_: bool = Depends(require_admin)):
     """Voices for the TTS picker, grouped by provider (openai, elevenlabs)."""
     return {"voices": await ai_brain.list_voices()}
+
+
+@router.post("/wheel-image/{kind}")
+async def upload_wheel_image(kind: str, file: UploadFile = File(...), _: bool = Depends(require_admin)):
+    """Upload custom prize-wheel art: a `frame` (bezel drawn over the wheel)
+    or `background` (drawn behind it). Caller still has to save the returned
+    path into `wheel_style` via PUT /api/settings."""
+    if kind not in ("frame", "background"):
+        raise HTTPException(status_code=400, detail="kind must be 'frame' or 'background'")
+    from PIL import Image
+
+    data = await file.read()
+    try:
+        Image.open(io.BytesIO(data)).verify()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+    ext = (file.filename or "wheel.png").rsplit(".", 1)[-1].lower()
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        ext = "png"
+    name = f"{kind}-{uuid.uuid4().hex[:10]}.{ext}"
+    (config.WHEEL_DIR / name).write_bytes(data)
+    return {"ok": True, "path": name, "url": f"/media/wheel/{name}"}

@@ -7,6 +7,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { api } from '../../lib/api'
 import ToggleSwitch from '../../components/ToggleSwitch.vue'
 import RewardFields from './RewardFields.vue'
+import WheelStyleFields from './WheelStyleFields.vue'
 
 const props = defineProps({ settings: Object })
 const emit = defineEmits(['save'])
@@ -20,6 +21,18 @@ const smtpForm = reactive({
 const smtpPassword = ref('')
 const smtpPasswordSet = ref(false)
 
+// Global prize-wheel look — mirrors DEFAULT_SETTINGS.wheel_style in backend/database.py
+// so the editor always has every field even against an older/partial saved value.
+const DEFAULT_WHEEL_STYLE = {
+  preset: 'brand', segment_style: 'glass',
+  pointer_color: '#F97316', hub_color: '#1e293b', hub_accent_color: '#F97316',
+  glow_color_1: '#F97316', glow_color_2: '#38BDF8', border_color: '#F8FAFC',
+  label_font: 'body', label_color: '#F8FAFC',
+  size_px: 340, preroll_ms: 2000, spin_ms: 5600, hold_ms: 1300,
+  frame_image: '', background_image: '',
+}
+const wheelStyleForm = ref({ ...DEFAULT_WHEEL_STYLE })
+
 watch(
   () => props.settings,
   (s) => {
@@ -31,6 +44,7 @@ watch(
     smtpForm.smtp_from = s.smtp_from ?? ''
     smtpForm.smtp_tls = s.smtp_tls ?? true
     smtpPasswordSet.value = !!s.smtp_password__set
+    wheelStyleForm.value = { ...DEFAULT_WHEEL_STYLE, ...(s.wheel_style || {}) }
   },
   { immediate: true, deep: true },
 )
@@ -43,6 +57,9 @@ function saveSmtp() {
   emit('save', patch)
   smtpPassword.value = ''
   smtpPasswordSet.value = smtpPasswordSet.value || !!patch.smtp_password
+}
+function saveWheelStyle() {
+  emit('save', { wheel_style: wheelStyleForm.value })
 }
 
 const quizzes = ref([])
@@ -161,6 +178,18 @@ async function activate(q) {
   }
 }
 
+async function resetUsage() {
+  if (!draft.value) return
+  if (!confirm('Reset used/remaining counts for this reward back to zero?')) return
+  try {
+    const res = await api.resetRewardUsage(draft.value.id)
+    msg.value = 'Reward usage reset.'
+    if (res.quiz) selectQuiz(res.quiz)
+  } catch (e) {
+    msg.value = e.message
+  }
+}
+
 // ---- question editing ----------------------------------------------------
 function addQuestion() {
   draft.value.questions.push({
@@ -253,6 +282,16 @@ onMounted(load)
       />
       <div class="pt-4 flex justify-end">
         <button class="btn-accent btn-sm" @click="saveKioskSettings">Save</button>
+      </div>
+    </div>
+
+    <!-- Prize wheel style (global — shared by every quiz's wheel reward) -->
+    <div class="glass-card p-5 sm:p-6 mb-5">
+      <h2 class="font-display text-lg font-semibold mb-1">Prize wheel style</h2>
+      <p class="hint !mt-0 mb-4">Shared look for every quiz's spinning wheel. Segment colors are set per-reward below.</p>
+      <WheelStyleFields v-model="wheelStyleForm" />
+      <div class="pt-4 flex justify-end">
+        <button class="btn-accent btn-sm" @click="saveWheelStyle">Save wheel style</button>
       </div>
     </div>
 
@@ -417,8 +456,11 @@ onMounted(load)
 
         <!-- Reward -->
         <div class="glass-card p-5 sm:p-6">
-          <h2 class="font-display text-lg font-semibold mb-1">Reward for passing</h2>
-          <p class="hint mb-4">Given when a guest scores at or above the pass score.</p>
+          <div class="flex items-start justify-between gap-3 mb-1">
+            <h2 class="font-display text-lg font-semibold">Reward for passing</h2>
+            <button class="btn-ghost btn-sm shrink-0" @click="resetUsage">Reset usage counts</button>
+          </div>
+          <p class="hint mb-4">Given when a guest scores at or above the pass score. Set a max uses limit to cap how many times a reward (or wheel segment) can be won.</p>
           <RewardFields v-model="draft.reward" :allow-wheel="true" />
         </div>
 

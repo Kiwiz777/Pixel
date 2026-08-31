@@ -12,6 +12,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../lib/api'
 import PrizeWheel from './PrizeWheel.vue'
 
+const props = defineProps({
+  wheelStyle: { type: Object, default: () => ({}) }, // global wheel_style setting (Admin > Quiz > Wheel style)
+})
 const emit = defineEmits(['close', 'reward'])
 
 const stage = ref('loading') // loading | intro | quiz | submitting | result | error
@@ -101,7 +104,7 @@ async function finish() {
 
 // Segment labels for the wheel (never codes — server already stripped them).
 const wheelSegments = computed(() =>
-  (result.value?.wheel_segments || []).map((s) => ({ label: rewardTitle(s) })),
+  (result.value?.wheel_segments || []).map((s) => ({ label: rewardTitle(s), color: s.color })),
 )
 
 // ---- reward presentation -------------------------------------------------
@@ -264,7 +267,15 @@ async function printVoucher() {
           <!-- Prize wheel (only while spinning; fades out to reveal the reward) -->
           <transition name="wheel">
             <div v-if="spinning" class="mt-5 grid place-items-center">
-              <PrizeWheel :segments="wheelSegments" :winner="result.wheel_index ?? -1" @done="spinning = false" />
+              <PrizeWheel
+                :segments="wheelSegments" :winner="result.wheel_index ?? -1"
+                :theme="wheelStyle"
+                :size="wheelStyle?.size_px || 340"
+                :preroll-ms="wheelStyle?.preroll_ms ?? 2000"
+                :spin-ms="wheelStyle?.spin_ms ?? 5600"
+                :hold-ms="wheelStyle?.hold_ms ?? 1300"
+                @done="spinning = false"
+              />
               <p class="hint mt-2 animate-pulse">Spinning for your prize…</p>
             </div>
           </transition>
@@ -313,6 +324,11 @@ async function printVoucher() {
                 </template>
                 <p v-if="voucherMsg" class="hint mt-2" :class="voucherState === 'error' ? 'text-red-300' : 'text-emerald-300'">{{ voucherMsg }}</p>
               </div>
+            </div>
+
+            <!-- out of stock: passed, but nothing left to give -->
+            <div v-else-if="reward?.type === 'none'" class="glass rounded-2xl px-5 py-4 max-w-md mx-auto">
+              <p class="text-slate-300">All our rewards have been claimed for now — thanks for playing!</p>
             </div>
 
             <!-- prints / ai_enhance / other -->
