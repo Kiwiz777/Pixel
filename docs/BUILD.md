@@ -54,6 +54,28 @@ it, so build and run must use the same Python.
 
 ---
 
+## One-shot: build + verify + install
+
+Everything below this point — prerequisites, build, smoke test, install — is
+also wired up as a single script, for redeploying after a change without
+re-running each step by hand:
+
+```bash
+chmod +x deploy/deploy_pi.sh   # once
+./deploy/deploy_pi.sh
+```
+
+Run it as your normal `pi` user, **not** with `sudo` — it calls `sudo` itself
+only for the two steps that need it (apt/pip prerequisites, and the final
+install). Already ran the prerequisites once? `./deploy/deploy_pi.sh
+--skip-prereqs` skips straight to build → smoke test → install.
+
+It stops at the first failure (e.g. a smoke test failure means it will
+**not** install a broken build over your running service), and prints
+exactly the same output as running each script manually. The sections below
+explain what each step does and how to run it individually — useful when
+only one part changed, or when troubleshooting.
+
 ## One-time prerequisites
 
 ```bash
