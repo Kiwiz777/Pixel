@@ -57,13 +57,13 @@ else
 fi
 
 echo "==> Step 1/3: build (backend/build_pi.sh)"
-PYTHON="$PYTHON" "$ROOT/backend/build_pi.sh"
+PYTHON="$PYTHON" bash "$ROOT/backend/build_pi.sh"
 
 echo "==> Step 2/3: smoke test (backend/smoke_test.sh)"
-"$ROOT/backend/smoke_test.sh"
+bash "$ROOT/backend/smoke_test.sh"
 
 echo "==> Step 3/3: install as the 'pixel' systemd service (deploy/install_pi.sh)"
-sudo "$HERE/install_pi.sh" "$ROOT/backend/build/run.dist"
+sudo bash "$HERE/install_pi.sh" "$ROOT/backend/build/run.dist"
 
 echo
 echo "==> Deployed. Kiosk: http://$(hostname -I | awk '{print $1}'):8000"
