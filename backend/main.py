@@ -23,8 +23,10 @@ import ai_brain
 import config
 import database as db
 import printer as printer_service
+import sharing
 import vision
-from routers import ai, contacts, logs, photobooth, printer, quiz, settings, users
+import whatsapp
+from routers import ai, contacts, logs, photobooth, printer, quiz, settings, share, users
 
 
 @contextlib.asynccontextmanager
@@ -33,8 +35,12 @@ async def lifespan(app: FastAPI):
     db.init_db()
     vision.bus.bind_loop(asyncio.get_running_loop())
     vision.camera.start()
+    sharing.bind_loop(asyncio.get_running_loop())  # WhatsApp photo codes -> replies
+    if db.get_setting("whatsapp_enabled", False):
+        whatsapp.service.start()  # no-op (state=unavailable) without neonize
     yield
     # --- shutdown ---
+    whatsapp.service.stop()
     vision.camera.stop()
     await ai_brain.aclose()
 
@@ -58,6 +64,7 @@ app.include_router(photobooth.router)
 app.include_router(ai.router)
 app.include_router(quiz.router)
 app.include_router(contacts.router)
+app.include_router(share.router)
 
 # Static media (captures + uploaded frames + face refs)
 app.mount("/media/captures", StaticFiles(directory=config.CAPTURES_DIR), name="captures")
@@ -75,6 +82,7 @@ async def health():
         "ok": True,
         "camera_available": vision.camera.available,
         "printer_backend": printer_service.backend_name(),
+        "whatsapp": whatsapp.service.state,
         "chat_provider": db.get_setting("active_chat_provider"),
     }
 

@@ -41,11 +41,12 @@ git clone <your-repo> /home/pi/photobooth && cd /home/pi/photobooth
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-pi.txt            # opencv + face-recognition + pycups
+pip install -r requirements-pi.txt            # opencv + face-recognition + pycups + neonize
 cp .env.example .env
 #   set PB_SECRET_KEY=$(openssl rand -base64 48)
 #   set PB_ADMIN_TOKEN to something strong
 #   set PB_DATA_DIR=/home/pi/photobooth/backend/data
+#   set PB_PHOTOS_DIR=/home/pi/Pictures/pixel      # saved guest photos (see §7)
 
 # frontend (build once; backend then serves dist/)
 cd ../frontend
@@ -98,6 +99,42 @@ X-GNOME-Autostart-enabled=true
 - `PB_FACE_DETECT_EVERY_N` — raise (e.g. 25) to cut CPU; lower for snappier greetings.
 - `PB_CAMERA_INDEX` — change if `/dev/video0` isn't the webcam.
 
+## 7. Saved photos, email & WhatsApp
+Configure in **Admin → Save & Share** and **Admin → WhatsApp**.
+
+**Photos folder.** Soft-saved photos land in `PB_PHOTOS_DIR` as
+`2026-09-28/2026-09-28_14-03-22.jpg` (local time; `_ai` suffix for enhanced versions).
+Defaults: `backend/data/photos` from source, `/srv/pixel/photos` for the compiled install
+(group `pixel`, so the login user can manage it — `install_pi.sh` adds you to the group).
+Browse them in Admin → Save & Share → Saved photos, or share the folder on the LAN:
+```bash
+sudo apt install -y samba
+sudo tee -a /etc/samba/smb.conf >/dev/null <<'EOF'
+[pixel-photos]
+   path = /srv/pixel/photos
+   read only = yes
+   guest ok = no
+   valid users = @pixel
+EOF
+sudo smbpasswd -a "$USER" && sudo systemctl restart smbd
+# Windows: \\<pi-ip>\pixel-photos   macOS: smb://<pi-ip>/pixel-photos
+```
+
+**Email.** Fill in SMTP (Gmail/Outlook need an *app password*), Save, then **Test
+connection**. The kiosk only offers "Email it" after a test login succeeds, and any SMTP
+edit requires a new test.
+
+**WhatsApp.** Needs `neonize` (64-bit OS only; `install_pi.sh` installs it). Admin →
+WhatsApp → **Connect**, then on the booth phone: Settings → Linked devices → scan the QR.
+The session survives restarts. Use a dedicated number and keep the default send limits on
+a new number — this is the linked-device protocol (like WhatsApp Web), so it's low-risk,
+not ban-proof.
+
+By default guests don't type a number: the kiosk shows a QR code that opens WhatsApp with
+a message containing a one-time code (valid 5 minutes). When they send it, the booth
+replies with their photo. The booth replies to nothing else, not even expired codes, so
+don't expect "chatbot" answers when testing. Send the exact pre-filled message.
+
 ## Troubleshooting
 - **No video:** `v4l2-ctl --list-devices`; check `PB_CAMERA_INDEX`; ensure the user is in
   the `video` group.
@@ -106,3 +143,9 @@ X-GNOME-Autostart-enabled=true
 - **dlib/face-recognition build is slow:** expected on first install; increase swap
   (`sudo dphys-swapfile`) if it OOMs on a 2GB Pi.
 - **TTS silent:** browser autoplay — confirm the Chromium autoplay flag above.
+- **WhatsApp tab says "Not installed":** `python3 -c 'import neonize'` in the Python that
+  runs Pixel. Compiled build: pip puts it in `/usr/local/lib/python3.X/dist-packages`,
+  which config.py searches automatically.
+- **Email/WhatsApp checkbox greyed out:** the service isn't connected — run Test
+  connection (email) or link the device (WhatsApp). Checked options for a disconnected
+  service are simply hidden on the kiosk.

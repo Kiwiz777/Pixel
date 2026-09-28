@@ -10,3 +10,4 @@
 opencv-python>=4.9          # webcam capture + JPEG encoding
 face-recognition>=1.3       # face identification (pulls in dlib)
 pycups>=2.0                 # native CUPS bindings
+neonize>=0.3.10             # WhatsApp photo delivery (linked device, like whatsapp-web.js)

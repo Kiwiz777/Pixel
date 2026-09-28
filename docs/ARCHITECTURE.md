@@ -52,6 +52,28 @@ Backend probe order: **pycups** → **lp/lpstat CLI** → **simulated**. `backen
 reports which is active. Admin can list printers, set default (persisted + pushed to CUPS
 via `lpoptions`), edit copies/media/colour, and run a generated test print.
 
+### sharing.py / mailer.py / whatsapp.py (soft save + delivery)
+- `sharing.save_capture(id)` writes the best version (frame burned in, enhanced if it
+  exists) to `PB_PHOTOS_DIR/<YYYY-MM-DD>/<YYYY-MM-DD_HH-MM-SS>[_ai].jpg` in local time.
+  Idempotent per capture+version; enhancing afterwards adds an `_ai` file.
+- `sharing.kiosk_options()` = admin checkbox **AND** live service state. Served publicly at
+  `GET /api/share/options`; the capture modal fetches it on open.
+- `mailer` is the single SMTP path (photo emails + quiz vouchers). 465 → SMTP_SSL, else
+  STARTTLS if `smtp_tls`. `verify()` sets `smtp_verified`; changing SMTP settings clears it.
+- `whatsapp.service` runs a neonize linked-device client in a daemon thread (QR pairing,
+  session in `DATA_DIR/whatsapp/`). `sharing.send_whatsapp` serialises sends behind an
+  asyncio lock with min-interval + jitter, and enforces hour/day/per-number quotas counted
+  from `logs` rows of type `share` (so they survive restarts).
+- WhatsApp **QR mode** (default): `create_wa_code` issues a short-lived one-time code and a
+  `wa.me` link (shown as a QR). The guest sends the pre-filled message; neonize's
+  MessageEv → `whatsapp._handle_incoming` (1:1 text only) → `sharing._on_incoming_text`
+  (thread → loop) → photo sent back into that chat. Anything without a live code is
+  ignored — the bot never sends anything but that photo. The kiosk polls the code status
+  for sent/failed.
+- Routes: `routers/share.py` — public `options|save|email|whatsapp`,
+  `whatsapp/code` (+ `/{code}` status, `/{code}/retry`), admin `status`,
+  `email/test`, `whatsapp/{status,start,stop,logout,test}`, `photos`, `photos/file/...`.
+
 ### database.py
 - `settings` is a typed key/value store (JSON values, `is_secret` flag). Adding a flag =
   add to `DEFAULT_SETTINGS`; it's seeded on `init_db()`.
@@ -66,7 +88,8 @@ plaintext; `mask` builds the `sk-****1234` previews. `require_admin` is the bear
 - `KioskView` owns two WebSockets (stream + events) with auto-reconnect, the BotFace, and
   the capture flow. `useBot` composable encapsulates chat + mic recording + audio playback.
 - `AdminView` is a token-gated shell loading settings + provider catalogue once and sharing
-  them with five tab components via props/emit (`@save` posts a partial patch).
+  them with the tab components via props/emit (`@save` posts a partial patch). Tabs that
+  need live service state (SharingTab, WhatsAppTab) fetch `/api/share/status` themselves.
 - Design tokens + component classes live in `src/style.css`; Tailwind config maps the
   brand/electric/ink palettes and the bot animations.
 
@@ -76,4 +99,6 @@ plaintext; `mask` builds the `sk-****1234` previews. `require_admin` is the bear
 2. Guest taps **Capture** → `image_processor.capture` saves `raw` → modal opens.
 3. **AI Enhance** → `ai_brain.enhance_image` → `enhanced` PNG shown.
 4. **Print** → frame overlay composited → `prepare_print` flattens → `printer.print_file`.
-5. Every step writes a row to `logs`, visible in Admin → Logs.
+5. **Save / Email it / WhatsApp it** (if enabled in Save & Share) → `sharing.save_capture`
+   → optional `mailer.send` / `whatsapp.service.send_image`. Errors → kiosk notice + Retry.
+6. Every step writes a row to `logs`, visible in Admin → Logs.

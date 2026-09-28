@@ -87,6 +87,31 @@ export const api = {
     return res.blob()
   },
 
+  // Soft save + share (public: kiosk capture modal)
+  shareOptions: () => request('GET', '/api/share/options'),
+  shareSave: (capture_id) => request('POST', '/api/share/save', { body: { capture_id } }),
+  shareEmail: (capture_id, email) =>
+    request('POST', '/api/share/email', { body: { capture_id, email } }),
+  shareWhatsApp: (capture_id, phone) =>
+    request('POST', '/api/share/whatsapp', { body: { capture_id, phone } }),
+  // QR mode: guest scans, sends the code to the booth, booth replies with the photo.
+  waCode: (capture_id) => request('POST', '/api/share/whatsapp/code', { body: { capture_id } }),
+  waCodeStatus: (code) => request('GET', `/api/share/whatsapp/code/${encodeURIComponent(code)}`),
+  waCodeRetry: (code) => request('POST', `/api/share/whatsapp/code/${encodeURIComponent(code)}/retry`),
+  // Soft save + share (admin)
+  shareStatus: () => request('GET', '/api/share/status', { admin: true }),
+  emailTest: () => request('POST', '/api/share/email/test', { admin: true }),
+  waStatus: () => request('GET', '/api/share/whatsapp/status', { admin: true }),
+  waStart: () => request('POST', '/api/share/whatsapp/start', { admin: true }),
+  waStop: () => request('POST', '/api/share/whatsapp/stop', { admin: true }),
+  waLogout: () => request('POST', '/api/share/whatsapp/logout', { admin: true }),
+  waTest: (phone) => request('POST', '/api/share/whatsapp/test', { body: { phone }, admin: true }),
+  savedPhotos: (day) =>
+    request('GET', `/api/share/photos${day ? `?day=${encodeURIComponent(day)}` : ''}`, { admin: true }),
+  // <img>/<a> can't send the bearer header, so the token rides in the query.
+  savedPhotoUrl: (file) =>
+    `/api/share/photos/file/${file.split('/').map(encodeURIComponent).join('/')}?token=${encodeURIComponent(getAdminToken())}`,
+
   // Contact us (public: kiosk)
   submitContact: (body) => request('POST', '/api/contacts', { body }),
   parseContact: (text) => request('POST', '/api/contacts/parse', { body: { text } }),

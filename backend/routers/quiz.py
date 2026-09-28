@@ -301,30 +301,14 @@ async def voucher_email(payload: VoucherEmail):
 
 
 def _send_voucher_email(to_addr: str, label: str, code: str, host: str) -> None:
-    import smtplib
-    from email.message import EmailMessage
+    import mailer
 
-    port = int(db.get_setting("smtp_port", 587) or 587)
-    user = db.get_setting("smtp_user", "")
-    password = db.get_setting("smtp_password", "")
-    sender = db.get_setting("smtp_from", "") or user
-    use_tls = bool(db.get_setting("smtp_tls", True))
-
-    msg = EmailMessage()
-    msg["Subject"] = f"Your reward: {label or 'Voucher'}"
-    msg["From"] = sender
-    msg["To"] = to_addr
-    msg.set_content(
+    mailer.send(
+        to_addr,
+        f"Your reward: {label or 'Voucher'}",
         f"Congratulations!\n\nYou won: {label or 'a voucher'}\nYour code: {code}\n\n"
-        "Show this code to claim your reward.\n\n— Pixel Photobooth"
+        "Show this code to claim your reward.\n\n— Pixel Photobooth",
     )
-
-    with smtplib.SMTP(host, port, timeout=15) as server:
-        if use_tls:
-            server.starttls()
-        if user:
-            server.login(user, password)
-        server.send_message(msg)
 
 
 @router.post("/voucher-print")

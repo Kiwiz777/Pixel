@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Query, status
 
 import config
 
@@ -82,3 +82,14 @@ async def require_admin(authorization: str | None = Header(default=None)) -> boo
             headers={"WWW-Authenticate": "Bearer"},
         )
     return True
+
+
+async def require_admin_or_query(
+    authorization: str | None = Header(default=None),
+    token: str | None = Query(default=None),
+) -> bool:
+    """Like require_admin, but also accepts `?token=` - for admin-only files
+    loaded by <img>/<a download>, which can't send an Authorization header."""
+    if token is not None and token == config.ADMIN_TOKEN:
+        return True
+    return await require_admin(authorization)

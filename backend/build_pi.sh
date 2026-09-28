@@ -76,6 +76,7 @@ echo "==> Compiling backend with Nuitka (this takes a while on a Pi)"
   --nofollow-import-to=dlib \
   --nofollow-import-to=numpy \
   --nofollow-import-to=cups \
+  --nofollow-import-to=neonize \
   --nofollow-import-to=tkinter \
   --enable-plugin=anti-bloat \
   --assume-yes-for-downloads \

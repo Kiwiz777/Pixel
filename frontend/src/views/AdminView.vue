@@ -3,7 +3,8 @@
  * AdminView - secure dashboard shell.
  *
  *  - Token gate: enter the PB_ADMIN_TOKEN once (stored in localStorage).
- *  - Sidebar tabs: General, AI Providers, Photobooth, Users, Logs.
+ *  - Sidebar tabs: General, AI Providers, Photobooth, Save & Share, WhatsApp,
+ *    Kiosk, Quiz, Users, Contacts, Logs.
  *  - Loads settings + provider catalogue once and shares with tabs.
  */
 import { ref, onMounted, computed, onErrorCaptured } from 'vue'
@@ -12,6 +13,8 @@ import GeneralTab from './admin/GeneralTab.vue'
 import AiProvidersTab from './admin/AiProvidersTab.vue'
 import PhotoboothTab from './admin/PhotoboothTab.vue'
 import KioskTab from './admin/KioskTab.vue'
+import SharingTab from './admin/SharingTab.vue'
+import WhatsAppTab from './admin/WhatsAppTab.vue'
 import QuizTab from './admin/QuizTab.vue'
 import UsersTab from './admin/UsersTab.vue'
 import ContactsTab from './admin/ContactsTab.vue'
@@ -21,6 +24,8 @@ const TABS = [
   { id: 'general', label: 'General', comp: GeneralTab },
   { id: 'ai', label: 'AI Providers', comp: AiProvidersTab },
   { id: 'photobooth', label: 'Photobooth', comp: PhotoboothTab },
+  { id: 'sharing', label: 'Save & Share', comp: SharingTab },
+  { id: 'whatsapp', label: 'WhatsApp', comp: WhatsAppTab },
   { id: 'kiosk', label: 'Kiosk', comp: KioskTab },
   { id: 'quiz', label: 'Quiz', comp: QuizTab },
   { id: 'users', label: 'Users', comp: UsersTab },

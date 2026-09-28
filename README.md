@@ -18,8 +18,10 @@ and prints them on a CUPS printer. Built to run locally and deploy on a Raspberr
 | Full-screen live camera feed (WebSocket) | **General** — auto-interact, talk button, language, persona |
 | Floating animated robot face (states) | **AI Providers** — keys + active chat/image models + voice |
 | Capture · AI Enhance · Frame · Print | **Photobooth** — enhance prompt, PNG frame upload, printer |
-| "Talk to Me" voice chat (STT→LLM→TTS) | **Users** — enrol faces & bios for recognition |
-| Auto-greet on face detection | **Logs** — conversations, captures, prints, errors |
+| Save photo · Email it · WhatsApp it | **Save & Share** — soft/auto save, email service, saved-photo browser |
+| "Talk to Me" voice chat (STT→LLM→TTS) | **WhatsApp** — link a number by QR, anti-ban send limits |
+| Auto-greet on face detection | **Users** — enrol faces & bios for recognition |
+| Quiz + prize wheel · Contact us | **Logs** — conversations, captures, prints, shares, errors |
 
 ---
 

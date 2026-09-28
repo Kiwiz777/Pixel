@@ -8,6 +8,7 @@ httpx>=0.27                      # async calls to all AI providers
 Pillow>=10.2                     # image framing / processing
 python-dotenv>=1.0               # .env loading
 cryptography>=42.0               # encrypt API keys at rest (degrades gracefully if absent)
+segno>=1.6                       # QR code (SVG) for WhatsApp pairing in Admin - pure Python
 
 # Note: we use plain `uvicorn` + `websockets` instead of `uvicorn[standard]`
 # because httptools/watchfiles lack prebuilt wheels for 32-bit Python on
@@ -19,4 +20,5 @@ cryptography>=42.0               # encrypt API keys at rest (degrades gracefully
 # opencv-python       : webcam capture + streaming
 # face-recognition    : known-face identification (needs dlib/cmake)
 # pycups              : native CUPS bindings (needs libcups2-dev)
+# neonize             : WhatsApp linked-device client (Go lib, 64-bit only)
 # These are optional; the backend degrades gracefully without them.

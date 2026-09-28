@@ -14,12 +14,8 @@ const emit = defineEmits(['save'])
 
 // Quiz-level kiosk setting (persisted via the shared settings store).
 const kioskForm = reactive({ quiz_enabled: true })
-// SMTP (for voucher email delivery). Password is a secret: sent only if typed.
-const smtpForm = reactive({
-  smtp_host: '', smtp_port: 587, smtp_user: '', smtp_from: '', smtp_tls: true,
-})
-const smtpPassword = ref('')
-const smtpPasswordSet = ref(false)
+// Voucher email is sent through the shared email service (Save & Share tab).
+const smtpConfigured = computed(() => !!props.settings?.smtp_host)
 
 // Global prize-wheel look — mirrors DEFAULT_SETTINGS.wheel_style in backend/database.py
 // so the editor always has every field even against an older/partial saved value.
@@ -38,25 +34,12 @@ watch(
   (s) => {
     if (!s) return
     kioskForm.quiz_enabled = s.quiz_enabled ?? true
-    smtpForm.smtp_host = s.smtp_host ?? ''
-    smtpForm.smtp_port = s.smtp_port ?? 587
-    smtpForm.smtp_user = s.smtp_user ?? ''
-    smtpForm.smtp_from = s.smtp_from ?? ''
-    smtpForm.smtp_tls = s.smtp_tls ?? true
-    smtpPasswordSet.value = !!s.smtp_password__set
     wheelStyleForm.value = { ...DEFAULT_WHEEL_STYLE, ...(s.wheel_style || {}) }
   },
   { immediate: true, deep: true },
 )
 function saveKioskSettings() {
   emit('save', { ...kioskForm })
-}
-function saveSmtp() {
-  const patch = { ...smtpForm, smtp_port: Number(smtpForm.smtp_port) || 587 }
-  if (smtpPassword.value) patch.smtp_password = smtpPassword.value // blank = keep existing
-  emit('save', patch)
-  smtpPassword.value = ''
-  smtpPasswordSet.value = smtpPasswordSet.value || !!patch.smtp_password
 }
 function saveWheelStyle() {
   emit('save', { wheel_style: wheelStyleForm.value })
@@ -295,42 +278,13 @@ onMounted(load)
       </div>
     </div>
 
-    <!-- Voucher email (SMTP) -->
-    <div class="glass-card p-5 sm:p-6 mb-5">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="font-display text-lg font-semibold">Voucher email (SMTP)</h2>
-        <span class="text-xs glass rounded-full px-3 py-1">{{ smtpForm.smtp_host ? 'configured' : 'not set' }}</span>
+    <!-- Voucher email uses the shared email service -->
+    <div class="glass-card p-5 sm:p-6 mb-5 flex items-center justify-between gap-3">
+      <div>
+        <h2 class="font-display text-lg font-semibold">Voucher email</h2>
+        <p class="hint !mt-0">Vouchers set to “Send by email” use the email service in <span class="text-slate-200">Save &amp; Share</span>. Left unset, wins are logged and the guest is told it’ll be emailed.</p>
       </div>
-      <p class="hint !mt-0 mb-4">Only needed for voucher rewards set to “Send by email”. Left blank, those wins are logged and the guest is told it’ll be emailed.</p>
-      <div class="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label class="label" for="smtphost">SMTP host</label>
-          <input id="smtphost" v-model="smtpForm.smtp_host" class="field" placeholder="smtp.gmail.com" />
-        </div>
-        <div>
-          <label class="label" for="smtpport">Port</label>
-          <input id="smtpport" v-model.number="smtpForm.smtp_port" type="number" class="field max-w-[8rem]" />
-        </div>
-        <div>
-          <label class="label" for="smtpuser">Username</label>
-          <input id="smtpuser" v-model="smtpForm.smtp_user" class="field" autocomplete="off" />
-        </div>
-        <div>
-          <label class="label" for="smtppass">Password</label>
-          <input id="smtppass" v-model="smtpPassword" type="password" class="field" autocomplete="new-password"
-                 :placeholder="smtpPasswordSet ? '•••••••• (leave blank to keep)' : ''" />
-        </div>
-        <div>
-          <label class="label" for="smtpfrom">From address</label>
-          <input id="smtpfrom" v-model="smtpForm.smtp_from" class="field" placeholder="Pixel <booth@example.com>" />
-        </div>
-        <div class="flex items-end">
-          <ToggleSwitch v-model="smtpForm.smtp_tls" label="Use STARTTLS" hint="Recommended for port 587." />
-        </div>
-      </div>
-      <div class="pt-4 flex justify-end">
-        <button class="btn-accent btn-sm" @click="saveSmtp">Save email settings</button>
-      </div>
+      <span class="text-xs glass rounded-full px-3 py-1 shrink-0">{{ smtpConfigured ? 'configured' : 'not set' }}</span>
     </div>
 
     <div class="grid lg:grid-cols-[18rem_1fr] gap-5">

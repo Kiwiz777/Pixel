@@ -103,13 +103,49 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "camera_idle_off_seconds": 0,
     # Turn the camera off again once a photo session finishes (on-demand camera).
     "camera_off_after_session": False,
-    # --- Email (SMTP) for voucher delivery (optional; graceful if unset) ---
+    # --- Email (SMTP) service: voucher + photo delivery (optional) ---
     "smtp_host": "",
-    "smtp_port": 587,
+    "smtp_port": 587,                             # 465 = implicit SSL, else STARTTLS if smtp_tls
     "smtp_user": "",
     "smtp_password": "",
     "smtp_from": "",
     "smtp_tls": True,
+    # Set ONLY by POST /api/share/email/test (a real SMTP login). Reset to
+    # False whenever an smtp_* value changes. Gates the kiosk email option.
+    "smtp_verified": False,
+    # --- Soft save + share (kiosk Save button after capture) ---
+    "soft_save_enabled": False,                   # show Save; photos go to PB_PHOTOS_DIR/<date>/
+    "soft_save_auto": False,                      # save automatically; hide the plain Save button
+    "soft_save_email": False,                     # offer "Email it" (needs verified SMTP)
+    "soft_save_whatsapp": False,                  # offer "WhatsApp it" (needs linked WhatsApp)
+    "share_email_subject": "Your photo from Pixel 📸",
+    "share_email_body": "Hi!\n\nHere's your photo from the Pixel photobooth. "
+                        "Thanks for stopping by!\n\n— Pixel",
+    # --- WhatsApp (linked device via neonize; see whatsapp.py) ---
+    "whatsapp_enabled": False,                    # start the client at boot
+    # How guests get their photo:
+    #   qr     - kiosk shows a QR that opens WhatsApp with a message to the booth
+    #            containing a one-time code; the booth replies with the photo.
+    #            Guest messages first -> lowest ban risk. Default.
+    #   number - guest types their number on the kiosk.
+    #   both   - QR, with "type your number instead" as a fallback.
+    "whatsapp_share_mode": "qr",
+    "whatsapp_code_ttl_s": 300,                   # code valid this long after the QR is shown
+    "whatsapp_code_max_senders": 10,              # phones per code (group photos)
+    "whatsapp_prefill_text": "Hi Pixel! My photo code: {code}",
+    "whatsapp_booth_number": "",                  # wa.me target; blank = the linked account
+    # One caption per line; a random one is picked per send so consecutive
+    # messages aren't byte-identical (a classic spam signal).
+    "whatsapp_captions": "Here's your photo from Pixel 📸 Thanks for stopping by!\n"
+                         "Your Pixel photobooth picture is here ✨\n"
+                         "Snap! Here's your photo from Pixel 🤖",
+    "whatsapp_default_country_code": "",          # e.g. "20": local 010... -> 2010...
+    "whatsapp_min_interval_s": 8,                 # min gap between sends (+ random jitter)
+    "whatsapp_max_per_hour": 40,
+    "whatsapp_max_per_day": 200,
+    "whatsapp_max_per_recipient_day": 3,
+    "whatsapp_typing_indicator": True,            # show "typing…" for a moment first
+    "whatsapp_verify_number": True,               # check the number is on WhatsApp first
     # --- Kiosk appearance / background ---
     # mode: "none" | "color" | "image" | "video" | "slideshow"
     "kiosk_bg_mode": "none",
@@ -340,11 +376,20 @@ def get_all_settings(*, reveal_secrets: bool = False) -> dict[str, Any]:
 
 def update_settings(values: dict[str, Any]) -> None:
     """Bulk update. Empty-string secrets are ignored so masked previews
-    posted back from the UI don't wipe stored keys."""
+    posted back from the UI don't wipe stored keys.
+
+    `smtp_verified` can't be written here - only a real SMTP login sets it -
+    and any actual change to an smtp_* value clears it."""
+    values = {k: v for k, v in values.items() if k != "smtp_verified"}
+    smtp_changed = False
     for key, value in values.items():
         if key in SECRET_KEYS and (value is None or value == ""):
             continue  # don't overwrite an existing secret with a blank
+        if key.startswith("smtp_") and get_setting(key) != value:
+            smtp_changed = True
         set_setting(key, value)
+    if smtp_changed:
+        set_setting("smtp_verified", False)
 
 
 # --------------------------------------------------------------------------
@@ -499,6 +544,19 @@ def list_logs(log_type: str | None = None, limit: int = 100,
                 pass
         out.append(d)
     return out
+
+
+def count_logs(log_type: str, since: datetime, meta_contains: Iterable[str] = ()) -> int:
+    """Count `log_type` rows newer than `since` whose JSON meta contains every
+    fragment in `meta_contains`. Backs the WhatsApp send quotas, so they
+    survive a restart instead of resetting to zero."""
+    query = "SELECT COUNT(*) FROM logs WHERE type=? AND created_at >= ?"
+    params: list[Any] = [log_type, since.astimezone(timezone.utc).isoformat()]
+    for frag in meta_contains:
+        query += " AND meta LIKE ?"
+        params.append(f"%{frag}%")
+    with get_conn() as conn:
+        return int(conn.execute(query, params).fetchone()[0])
 
 
 def clear_logs(log_type: str | None = None) -> int:

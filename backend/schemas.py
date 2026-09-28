@@ -56,6 +56,25 @@ class PrintRequest(BaseModel):
     copies: int | None = None
 
 
+# --- Soft save + share -----------------------------------------------------
+class ShareSave(BaseModel):
+    capture_id: str
+
+
+class ShareEmail(BaseModel):
+    capture_id: str
+    email: str
+
+
+class ShareWhatsApp(BaseModel):
+    capture_id: str
+    phone: str
+
+
+class WhatsAppTest(BaseModel):
+    phone: str
+
+
 # --- Printer ---------------------------------------------------------------
 # --- Contact us ------------------------------------------------------------
 class ContactCreate(BaseModel):

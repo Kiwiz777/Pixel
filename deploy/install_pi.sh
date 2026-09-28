@@ -34,6 +34,9 @@ apt-get update -qq
 apt-get install -y --no-install-recommends \
   python3-opencv python3-numpy cups cups-client libcups2-dev >/dev/null
 python3 -c 'import cups' 2>/dev/null || pip3 install --break-system-packages pycups
+# WhatsApp photo delivery (optional - the app just hides the option without it).
+python3 -c 'import neonize' 2>/dev/null || pip3 install --break-system-packages neonize \
+  || echo "   (neonize install failed - WhatsApp sending will be unavailable)"
 
 # ---------------------------------------------------------------------------
 # 3. Application bundle -> read-only, owned by root. The service user can
@@ -53,6 +56,19 @@ chmod 0755 "$APP_DIR/pixel"
 mkdir -p "$STATE_DIR"
 chown -R pixel:pixel "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
+
+# Soft-saved guest photos: a SHARED folder, unlike the private state dir.
+# setgid + group-writable so the human login user (added to the `pixel`
+# group) can browse, copy and clean it up without sudo.
+PHOTOS_DIR=/srv/pixel/photos
+mkdir -p "$PHOTOS_DIR"
+chown pixel:pixel "$PHOTOS_DIR"
+chmod 2775 "$PHOTOS_DIR"
+chmod 0755 "$(dirname "$PHOTOS_DIR")"
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+  usermod -aG pixel "$SUDO_USER"
+  echo "==> $SUDO_USER added to group 'pixel' (photos: $PHOTOS_DIR; re-login to apply)"
+fi
 
 # ---------------------------------------------------------------------------
 # 5. Secrets. Generated once, never baked into the image.

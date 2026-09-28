@@ -24,9 +24,16 @@ ExecStart=/opt/pixel/pixel
 Environment=PB_DATA_DIR=/var/lib/pixel
 Environment=PB_HOST=0.0.0.0
 Environment=PB_PORT=8000
-# The optional native extras (cv2, face_recognition, pycups) are not bundled;
-# they are apt/pip installs in the system Python.
-Environment=PB_EXTRA_SITE_PACKAGES=/usr/lib/python3/dist-packages
+# Soft-saved guest photos (<date>/<datetime>.jpg). Shared with the login user
+# via the `pixel` group - see install_pi.sh. UMask 0002 keeps new files/dirs
+# group-writable so they can be cleaned up without sudo.
+Environment=PB_PHOTOS_DIR=/srv/pixel/photos
+UMask=0002
+# The optional native extras (cv2, face_recognition, pycups, neonize) are not
+# bundled; they are apt/pip installs in the system Python. config.py searches
+# /usr/lib/python3/dist-packages AND /usr/local/lib/python3.X/dist-packages
+# (where `pip --break-system-packages` puts things) unless this is set:
+# Environment=PB_EXTRA_SITE_PACKAGES=...
 
 # Secrets (PB_ADMIN_TOKEN, PB_SECRET_KEY) are NOT baked into the binary or
 # this unit. Create the file with `chmod 600`, owned by root.
@@ -39,7 +46,7 @@ RestartSec=3
 StateDirectory=pixel
 StateDirectoryMode=0700
 ProtectSystem=strict
-ReadWritePaths=/var/lib/pixel
+ReadWritePaths=/var/lib/pixel /srv/pixel/photos
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

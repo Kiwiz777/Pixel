@@ -56,11 +56,17 @@ BACKGROUNDS_DIR = DATA_DIR / "backgrounds"    # kiosk background images/videos
 REWARDS_DIR = DATA_DIR / "rewards"            # quiz reward images shown to winners
 WHEEL_DIR = DATA_DIR / "wheel"                # prize-wheel custom frame/background art
 RECORDINGS_DIR = DATA_DIR / "recordings"      # kept STT audio, for playback/debugging
+WHATSAPP_DIR = DATA_DIR / "whatsapp"          # linked-device session (keep private)
 DB_PATH = Path(os.getenv("PB_DB_PATH", DATA_DIR / "photobooth.db"))
+
+# Soft-saved guest photos, as <date>/<datetime>.jpg. Deliberately its own env
+# var: DATA_DIR is private (0700 on the Pi), while this folder is meant to be
+# browsed/copied/shared by the operator (see docs/DEPLOYMENT_PI.md).
+PHOTOS_DIR = Path(os.getenv("PB_PHOTOS_DIR", DATA_DIR / "photos"))
 
 try:
     for _d in (DATA_DIR, CAPTURES_DIR, FRAMES_DIR, FACES_DIR, BACKGROUNDS_DIR,
-               REWARDS_DIR, WHEEL_DIR, RECORDINGS_DIR):
+               REWARDS_DIR, WHEEL_DIR, RECORDINGS_DIR, WHATSAPP_DIR, PHOTOS_DIR):
         _d.mkdir(parents=True, exist_ok=True)
 except OSError as _exc:  # read-only or unwritable state dir - fail loudly, not weirdly
     raise RuntimeError(
@@ -73,7 +79,14 @@ except OSError as _exc:  # read-only or unwritable state dir - fail loudly, not 
 # stay in the Pi's system Python - so re-add that directory here, before any
 # other backend module runs its guarded import of them.
 if IS_COMPILED:
-    for _p in os.getenv("PB_EXTRA_SITE_PACKAGES", "/usr/lib/python3/dist-packages").split(os.pathsep):
+    # apt installs land in /usr/lib/python3/dist-packages, but
+    # `pip install --break-system-packages` (pycups, neonize) lands in
+    # /usr/local/lib/python3.X/dist-packages - both must be searchable.
+    _default_extra = os.pathsep.join((
+        "/usr/lib/python3/dist-packages",
+        f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/dist-packages",
+    ))
+    for _p in os.getenv("PB_EXTRA_SITE_PACKAGES", _default_extra).split(os.pathsep):
         if _p and os.path.isdir(_p) and _p not in sys.path:
             sys.path.append(_p)
 

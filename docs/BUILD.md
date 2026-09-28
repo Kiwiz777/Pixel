@@ -125,16 +125,18 @@ to tmpfs on *every boot*. On a Pi that's a multi-second startup delay and
 pointless SD/RAM churn for an appliance that never moves. `--standalone` boots
 instantly, and dropping it into a read-only squashfs makes it just as opaque.
 
-### Why opencv / dlib / pycups are excluded
+### Why opencv / dlib / pycups / neonize are excluded
 
 `build_pi.sh` passes `--nofollow-import-to` for `cv2`, `face_recognition`,
-`dlib`, `numpy` and `cups`. Bundling those for ARM is fragile, slow and huge —
-and they're public open source, so hiding them buys nothing.
+`dlib`, `numpy`, `cups` and `neonize` (WhatsApp; it ships a Go shared library).
+Bundling those for ARM is fragile, slow and huge — and they're public open
+source, so hiding them buys nothing.
 
 They stay in the Pi's system Python. `config.py` re-adds
-`/usr/lib/python3/dist-packages` to `sys.path` when it detects a compiled build
-(`PB_EXTRA_SITE_PACKAGES` overrides the path), so the guarded imports in
-`vision.py` and `printer.py` still resolve at runtime.
+`/usr/lib/python3/dist-packages` (apt) and `/usr/local/lib/python3.X/dist-packages`
+(`pip --break-system-packages`) to `sys.path` when it detects a compiled build
+(`PB_EXTRA_SITE_PACKAGES` overrides both), so the guarded imports in
+`vision.py`, `printer.py` and `whatsapp.py` still resolve at runtime.
 
 ---
 
@@ -181,7 +183,10 @@ This:
 - creates a `pixel` system user (no shell, no home) in the `video` and `lp` groups
 - apt-installs the optional native libs if missing
 - copies the bundle to `/opt/pixel`, **root-owned and read-only**
+- pip-installs `neonize` (WhatsApp) if missing — failure just disables WhatsApp
 - creates `/var/lib/pixel` (mode 0700) for the database, captures and uploads
+- creates `/srv/pixel/photos` (group `pixel`, 2775) for soft-saved guest photos and
+  adds the invoking user to the `pixel` group so they can browse/clean it
 - generates `/etc/pixel/pixel.env` with a random `PB_ADMIN_TOKEN` and
   `PB_SECRET_KEY`, mode 0600 — **it prints the admin token once, save it**
 - installs and starts the `pixel` systemd service
@@ -214,7 +219,8 @@ sudo ./deploy/install_pi.sh backend/build/run.dist
 ```
 
 `install_pi.sh` keeps an existing `/etc/pixel/pixel.env` and leaves
-`/var/lib/pixel` alone, so your settings, API keys and photos survive.
+`/var/lib/pixel` and `/srv/pixel/photos` alone, so your settings, API keys, the
+linked WhatsApp session and saved photos survive.
 
 ---
 
