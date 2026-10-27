@@ -15,10 +15,33 @@
 #   PIXEL_URL=http://localhost:8000/    what the kiosk opens (keep it localhost:
 #                                       the camera and the close button need it)
 #   PIXEL_BROWSER=chromium-browser      browser binary
+#   PIXEL_OZONE=x11                     Chromium display backend. x11 is what
+#                                       works on the Pi desktop; empty = Chromium
+#                                       picks (often Wayland - broke the kiosk)
+#
+# Options:
+#   --delay N   wait N seconds first (login autostart: let the desktop settle)
+#
+# Output (and Chromium's) goes to ~/.cache/pixel-kiosk.log - the icon has no
+# terminal, so look there if the kiosk doesn't come up right.
 #
 set -uo pipefail
 
+DELAY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --delay) DELAY="${2:-0}"; shift 2 ;;
+    *) echo "!! unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+LOG="$HOME/.cache/pixel-kiosk.log"
+mkdir -p "$(dirname "$LOG")"
+exec >"$LOG" 2>&1
+echo "==> $(date '+%F %T') pixel-kiosk starting (delay ${DELAY}s, DISPLAY=${DISPLAY:-} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-})"
+
 URL="${PIXEL_URL:-http://localhost:8000/}"
+OZONE="${PIXEL_OZONE-x11}"
 BASE="$(printf '%s' "$URL" | sed -E 's#^(https?://[^/]+).*#\1#')"   # scheme://host:port
 PROFILE="$HOME/.config/pixel-kiosk"
 RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}"
@@ -38,6 +61,8 @@ if ! flock -n 9; then
   exit 0
 fi
 
+[ "$DELAY" -gt 0 ] 2>/dev/null && sleep "$DELAY"
+
 # The backend may still be booting (desktop autostart races systemd).
 echo "==> Waiting for Pixel at $BASE"
 for _ in $(seq 1 90); do
@@ -55,8 +80,14 @@ fi
 START="$(date +%s)"
 # A dedicated profile so the kiosk is its own process (an open normal
 # Chromium window would otherwise absorb it and we'd lose track of it).
+# Incognito: nothing from one guest (form autofill, history) survives a run.
+EXTRA=()
+[ -n "$OZONE" ] && EXTRA+=("--ozone-platform=$OZONE")
+echo "==> Launching $BROWSER ${EXTRA[*]} --kiosk $URL"
 "$BROWSER" \
+  "${EXTRA[@]}" \
   --kiosk \
+  --incognito \
   --user-data-dir="$PROFILE" \
   --noerrdialogs \
   --disable-infobars \
@@ -65,7 +96,7 @@ START="$(date +%s)"
   --check-for-update-interval=31536000 \
   --autoplay-policy=no-user-gesture-required \
   --use-fake-ui-for-media-stream \
-  "$URL" >/dev/null 2>&1 &
+  "$URL" &
 PID=$!
 echo "==> Kiosk started (pid $PID). Close it from the staff menu: 5 taps top-left."
 

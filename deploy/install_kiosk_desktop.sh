@@ -34,14 +34,14 @@ mkdir -p "$(dirname "$BIN")"
 install -m 0755 "$HERE/pixel-kiosk.sh" "$BIN"
 echo "==> Launcher: $BIN"
 
-entry() { # entry <path>
+entry() { # entry <path> [launcher args]
   mkdir -p "$(dirname "$1")"
   cat >"$1" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Start Pixel Kiosk
 Comment=Open the Pixel photobooth full-screen (close it from the staff menu: 5 taps top-left)
-Exec=$BIN
+Exec=$BIN${2:+ $2}
 Icon=camera-photo
 Terminal=false
 Categories=Utility;
@@ -57,16 +57,24 @@ gio set "$DESKTOP_DIR/pixel-kiosk.desktop" metadata::trusted true 2>/dev/null ||
 entry "$HOME/.local/share/applications/pixel-kiosk.desktop"
 echo "==> Icon: $DESKTOP_DIR/pixel-kiosk.desktop (+ app menu)"
 
-# The old hand-made autostart from docs/DEPLOYMENT_PI.md launched Chromium
-# directly; keeping it would open a second, un-closable kiosk.
-OLD="$HOME/.config/autostart/photobooth-kiosk.desktop"
-if [ -f "$OLD" ]; then
-  mv "$OLD" "$OLD.bak"
-  echo "==> Disabled old autostart (saved as $OLD.bak)"
+# Any hand-made autostart that launches Chromium --kiosk directly (the one in
+# docs/DEPLOYMENT_PI.md, a kiosk.desktop, ...) would open a SECOND kiosk next
+# to the launcher's. Set them aside - renamed, not deleted - but only when
+# the launcher is taking over autostart.
+if [ "$AUTOSTART" -eq 1 ]; then
+  for f in "$HOME"/.config/autostart/*.desktop; do
+    [ -f "$f" ] || continue
+    [ "$(basename "$f")" = "pixel-kiosk.desktop" ] && continue
+    if grep -q -- '--kiosk' "$f" && grep -qi 'chrom' "$f"; then
+      mv "$f" "$f.bak"
+      echo "==> Disabled old kiosk autostart: $f (saved as $f.bak)"
+    fi
+  done
 fi
 
 if [ "$AUTOSTART" -eq 1 ]; then
-  entry "$HOME/.config/autostart/pixel-kiosk.desktop"
+  # 8s like the hand-made autostart: let the desktop finish starting first.
+  entry "$HOME/.config/autostart/pixel-kiosk.desktop" "--delay 8"
   echo "==> Autostart at login: on"
 else
   rm -f "$HOME/.config/autostart/pixel-kiosk.desktop"
