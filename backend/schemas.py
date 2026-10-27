@@ -42,6 +42,9 @@ class ChatRequest(BaseModel):
 class EnhanceRequest(BaseModel):
     capture_id: str
     prompt: str | None = None
+    # Style-card mode: index into the `enhance_cards` setting. The server
+    # resolves the prompt, so card prompts never reach the kiosk.
+    style_index: int | None = None
     user_id: int | None = None
 
 
@@ -109,6 +112,10 @@ class PrintConfigUpdate(BaseModel):
 class TTSRequest(BaseModel):
     text: str
     voice_id: str | None = None
+
+
+class VoiceClipsRequest(BaseModel):
+    texts: list[str] = Field(default_factory=list)   # lines to pre-generate
 
 
 # --- Quiz / MCQ ------------------------------------------------------------

@@ -59,6 +59,11 @@ import { open, toggleKeyboard } from './composables/useGlobalKeyboard'
   opacity: 0.45;
   transition: opacity 0.2s ease, background-color 0.2s ease;
 }
+/* Kiosk attract mode: nothing but the background until a guest arrives. */
+.kiosk-asleep .kb-launcher {
+  opacity: 0;
+  pointer-events: none;
+}
 .kb-launcher:hover,
 .kb-launcher:focus-visible {
   opacity: 1;

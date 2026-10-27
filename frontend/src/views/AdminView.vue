@@ -3,13 +3,15 @@
  * AdminView - secure dashboard shell.
  *
  *  - Token gate: enter the PB_ADMIN_TOKEN once (stored in localStorage).
- *  - Sidebar tabs: General, AI Providers, Photobooth, Save & Share, WhatsApp,
- *    Kiosk, Quiz, Users, Contacts, Logs.
+ *  - Sidebar tabs: General, Avatar & Welcome, AI Providers, Photobooth,
+ *    Save & Share, WhatsApp, Kiosk, Quiz, Users, Contacts, Logs.
  *  - Loads settings + provider catalogue once and shares with tabs.
  */
 import { ref, onMounted, computed, onErrorCaptured } from 'vue'
 import { api, getAdminToken, setAdminToken, clearAdminToken } from '../lib/api'
+import { applyFont } from '../lib/fonts'
 import GeneralTab from './admin/GeneralTab.vue'
+import AvatarTab from './admin/AvatarTab.vue'
 import AiProvidersTab from './admin/AiProvidersTab.vue'
 import PhotoboothTab from './admin/PhotoboothTab.vue'
 import KioskTab from './admin/KioskTab.vue'
@@ -22,6 +24,7 @@ import LogsTab from './admin/LogsTab.vue'
 
 const TABS = [
   { id: 'general', label: 'General', comp: GeneralTab },
+  { id: 'avatar', label: 'Avatar & Welcome', comp: AvatarTab },
   { id: 'ai', label: 'AI Providers', comp: AiProvidersTab },
   { id: 'photobooth', label: 'Photobooth', comp: PhotoboothTab },
   { id: 'sharing', label: 'Save & Share', comp: SharingTab },
@@ -58,6 +61,7 @@ async function loadAll() {
   try {
     const data = await api.getSettings()
     settings.value = data.settings
+    applyFont(data.settings.ui_font)
     languages.value = data.languages
     providers.value = data.providers
     authed.value = true
@@ -88,6 +92,7 @@ function logout() {
 async function saveSettings(patch) {
   const res = await api.saveSettings(patch)
   settings.value = res.settings
+  applyFont(res.settings.ui_font)
   flashSaved()
 }
 

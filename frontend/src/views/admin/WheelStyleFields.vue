@@ -145,8 +145,8 @@ function spinPreview() {
       <div>
         <label class="label">Label font</label>
         <select class="field max-w-xs" :value="r.label_font || 'body'" @change="patch({ label_font: $event.target.value })">
-          <option value="body">Nunito (body)</option>
-          <option value="display">Fredoka (display)</option>
+          <option value="body">Body font</option>
+          <option value="display">Display font</option>
         </select>
       </div>
 

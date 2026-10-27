@@ -116,6 +116,7 @@ async function uploadImage(e) {
           <option value="admin">Fixed prompt (set below)</option>
           <option value="list">Guest picks from a list</option>
           <option value="user">Guest types their own</option>
+          <option value="cards">Guest picks a style card</option>
         </select>
       </div>
       <div v-if="(r.prompt_mode || 'admin') === 'admin'">
@@ -130,6 +131,9 @@ async function uploadImage(e) {
                   placeholder="Cartoon portrait&#10;Vintage film look&#10;Neon cyberpunk"></textarea>
         <p class="hint">The guest chooses one of these on the kiosk.</p>
       </div>
+      <p v-else-if="r.prompt_mode === 'cards'" class="hint">
+        The guest picks from the style cards set up in Photobooth → AI Enhance.
+      </p>
       <p v-else class="hint">The guest will type their own enhancement prompt on the kiosk.</p>
     </div>
 

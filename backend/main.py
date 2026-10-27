@@ -33,6 +33,7 @@ from routers import ai, contacts, logs, photobooth, printer, quiz, settings, sha
 async def lifespan(app: FastAPI):
     # --- startup ---
     db.init_db()
+    ai_brain.migrate_retired_models()  # e.g. gpt-image-1 -> provider default
     vision.bus.bind_loop(asyncio.get_running_loop())
     vision.camera.start()
     sharing.bind_loop(asyncio.get_running_loop())  # WhatsApp photo codes -> replies
@@ -73,6 +74,9 @@ app.mount("/media/faces", StaticFiles(directory=config.FACES_DIR), name="faces")
 app.mount("/media/backgrounds", StaticFiles(directory=config.BACKGROUNDS_DIR), name="backgrounds")
 app.mount("/media/rewards", StaticFiles(directory=config.REWARDS_DIR), name="rewards")
 app.mount("/media/wheel", StaticFiles(directory=config.WHEEL_DIR), name="wheel")
+app.mount("/media/styles", StaticFiles(directory=config.STYLES_DIR), name="styles")
+app.mount("/media/voice", StaticFiles(directory=config.VOICE_DIR), name="voice")
+app.mount("/media/avatar", StaticFiles(directory=config.AVATAR_DIR), name="avatar")
 app.mount("/media/recordings", StaticFiles(directory=config.RECORDINGS_DIR), name="recordings")
 
 

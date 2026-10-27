@@ -62,35 +62,71 @@ class ProviderInfo:
     models: tuple[str, ...]
 
 
+# Built-in model lists (October 2026). These go stale - the Admin's "Refresh"
+# button pulls the live list from each provider (list_models below), and any
+# model id can be typed in, so a new release never needs a code change.
 CHAT_PROVIDERS: dict[str, ProviderInfo] = {
     "openai": ProviderInfo(
-        "api_key_openai", "OpenAI", "gpt-4o",
-        ("gpt-4o", "gpt-4o-mini", "gpt-4.1", "o4-mini"),
+        "api_key_openai", "OpenAI", "gpt-6.1-terra",
+        ("gpt-6.1-terra", "gpt-6-luna", "gpt-6-astra", "gpt-5.5"),
     ),
     "anthropic": ProviderInfo(
-        "api_key_anthropic", "Anthropic (Claude)", "claude-opus-4-8",
-        ("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"),
+        "api_key_anthropic", "Anthropic (Claude)", "claude-opus-5-5",
+        ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"),
     ),
     "gemini": ProviderInfo(
-        "api_key_gemini", "Google Gemini", "gemini-2.0-flash",
-        ("gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro"),
+        "api_key_gemini", "Google Gemini", "gemini-3.6-flash",
+        ("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"),
     ),
     "deepseek": ProviderInfo(
-        "api_key_deepseek", "DeepSeek", "deepseek-chat",
-        ("deepseek-chat", "deepseek-reasoner"),
+        "api_key_deepseek", "DeepSeek", "deepseek-v4-flash",
+        ("deepseek-v4-flash", "deepseek-v4-pro"),
     ),
 }
 
 IMAGE_PROVIDERS: dict[str, ProviderInfo] = {
     "openai": ProviderInfo(
-        "api_key_openai", "OpenAI Images", "gpt-image-1",
-        ("gpt-image-1", "dall-e-3"),
+        "api_key_openai", "OpenAI Images", "gpt-image-2.5-sunburst",
+        ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "gpt-image-2"),
     ),
     "gemini": ProviderInfo(
-        "api_key_gemini", "Gemini Images", "gemini-2.0-flash-exp-image-generation",
-        ("gemini-2.0-flash-exp-image-generation",),
+        "api_key_gemini", "Gemini Images", "gemini-3.1-flash-image",
+        ("gemini-3.1-flash-image", "gemini-3-pro-image"),
     ),
 }
+
+# Model ids the providers have shut down. A saved setting naming one of these
+# silently uses the provider default instead of failing every request.
+RETIRED_MODELS = {
+    "gpt-image-1", "dall-e-2", "dall-e-3",                      # OpenAI images (2026)
+    "deepseek-chat", "deepseek-reasoner",                        # DeepSeek V3 aliases (Jul 2026)
+    "gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro",
+    "gemini-2.0-flash-exp-image-generation",
+}
+
+# Extra output room for "thinking" models. Their hidden reasoning counts
+# toward the output cap, so the bare reply cap (~120) could leave nothing for
+# the answer. Reply length is held by the prompt instead (_length_instruction).
+_REASONING_HEADROOM = 1024
+
+
+def resolve_model(kind: str, provider: str) -> str:
+    """The configured model for `kind` ('chat' | 'image'), or the provider
+    default when unset or retired."""
+    registry = CHAT_PROVIDERS if kind == "chat" else IMAGE_PROVIDERS
+    info = registry.get(provider)
+    if info is None:
+        raise AIError(f"Unknown {kind} provider '{provider}'.")
+    model = (db.get_setting(f"active_{kind}_model") or "").strip()
+    return info.default_model if not model or model in RETIRED_MODELS else model
+
+
+def migrate_retired_models() -> None:
+    """Startup: clear saved models the provider has shut down, so the Admin
+    shows the working default instead of a dead id."""
+    for kind in ("chat", "image"):
+        if (db.get_setting(f"active_{kind}_model") or "") in RETIRED_MODELS:
+            db.set_setting(f"active_{kind}_model", "")
 
 
 def provider_catalog() -> dict[str, Any]:
@@ -140,16 +176,14 @@ async def chat(prompt: str, *, history: list[dict[str, str]] | None = None,
     `history` is a list of {"role": "user"|"assistant", "content": str}.
     """
     provider = db.get_setting("active_chat_provider", "anthropic")
-    model = db.get_setting("active_chat_model") or CHAT_PROVIDERS[provider].default_model
-    info = CHAT_PROVIDERS.get(provider)
-    if info is None:
-        raise AIError(f"Unknown chat provider '{provider}'.")
+    model = resolve_model("chat", provider)
+    info = CHAT_PROVIDERS[provider]
     api_key = db.get_setting(info.key_name)
     if not api_key:
         raise AIError(f"No API key configured for {info.label}.")
 
     persona = system or db.get_setting("system_persona", "You are a friendly robot.")
-    system_prompt = f"{persona}\n\n{_language_instruction()}"
+    system_prompt = f"{persona}\n\n{_language_instruction()} {_length_instruction()}"
     history = history or []
 
     if provider in ("openai", "deepseek"):
@@ -171,10 +205,8 @@ async def extract(text: str, instruction: str) -> str:
     language redirection, so the model returns just the requested value.
     """
     provider = db.get_setting("active_chat_provider", "anthropic")
-    model = db.get_setting("active_chat_model") or CHAT_PROVIDERS[provider].default_model
-    info = CHAT_PROVIDERS.get(provider)
-    if info is None:
-        raise AIError(f"Unknown chat provider '{provider}'.")
+    model = resolve_model("chat", provider)
+    info = CHAT_PROVIDERS[provider]
     api_key = db.get_setting(info.key_name)
     if not api_key:
         raise AIError(f"No API key configured for {info.label}.")
@@ -190,6 +222,12 @@ async def extract(text: str, instruction: str) -> str:
     raise AIError(f"Provider '{provider}' not implemented.")
 
 
+def _length_instruction() -> str:
+    # ~0.7 words per token: keeps spoken replies inside the Admin's cap even on
+    # models whose token cap had to be raised for their hidden reasoning.
+    return f"Keep every reply under about {max(12, int(_max_tokens() * 0.7))} words."
+
+
 def _max_tokens() -> int:
     """Reply-length cap (Admin-tunable). Bounded so a bad value can't stall a turn."""
     try:
@@ -198,36 +236,66 @@ def _max_tokens() -> int:
         return 120
 
 
+def _openai_legacy(model: str) -> bool:
+    """Pre-reasoning OpenAI chat models: take temperature + max_tokens."""
+    return model.startswith(("gpt-4", "gpt-3.5", "chatgpt-4o"))
+
+
 async def _chat_openai_compatible(provider: str, api_key: str, model: str,
                                   system_prompt: str, history: list[dict[str, str]],
                                   prompt: str) -> str:
     base = "https://api.openai.com/v1" if provider == "openai" else "https://api.deepseek.com"
     messages = [{"role": "system", "content": system_prompt}, *history,
                 {"role": "user", "content": prompt}]
-    r = await _http().post(
-        f"{base}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": model, "messages": messages, "temperature": 0.7,
-              "max_tokens": _max_tokens()},
+    body: dict[str, Any] = {"model": model, "messages": messages}
+    if provider == "openai" and not _openai_legacy(model):
+        # GPT-5/6 reasoning models reject temperature and max_tokens; their
+        # reasoning shares the completion budget, so give it headroom.
+        body["max_completion_tokens"] = _max_tokens() + _REASONING_HEADROOM
+        body["reasoning_effort"] = "low"
+    else:
+        body["temperature"] = 0.7
+        body["max_tokens"] = _max_tokens() + (_REASONING_HEADROOM if provider == "deepseek" else 0)
+    data = await _post_adaptive(
+        provider, f"{base}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"}, json=body,
+        optional={"reasoning_effort": ("reasoning_effort",), "temperature": ("temperature",)},
     )
-    _raise_for_status(r, provider)
-    data = r.json()
-    return data["choices"][0]["message"]["content"].strip()
+    return (data["choices"][0]["message"].get("content") or "").strip()
+
+
+# Claude models that think by default (thinking can't be switched off on
+# several of them) - they need output headroom and run at low effort here.
+_CLAUDE_THINKING = ("claude-opus-5", "claude-sonnet-5", "claude-haiku-5", "claude-fable", "claude-mythos")
+# Models that accept the server-side refusal fallback ("default" routing).
+_CLAUDE_FALLBACK = ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
 
 
 async def _chat_anthropic(api_key: str, model: str, system_prompt: str,
                           history: list[dict[str, str]], prompt: str) -> str:
     messages = [*history, {"role": "user", "content": prompt}]
-    r = await _http().post(
-        "https://api.anthropic.com/v1/messages",
-        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-        json={"model": model, "system": system_prompt, "max_tokens": _max_tokens(),
-              "messages": messages},
+    headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    body: dict[str, Any] = {"model": model, "system": system_prompt,
+                            "max_tokens": _max_tokens(), "messages": messages}
+    if model.startswith(_CLAUDE_THINKING):
+        # Low effort: a photobooth one-liner needs little reasoning, and less
+        # thinking is less latency before the guest hears anything.
+        body["max_tokens"] = _max_tokens() + _REASONING_HEADROOM
+        body["output_config"] = {"effort": "low"}
+    if model in _CLAUDE_FALLBACK:
+        # If a safety classifier declines, the API retries on a fallback
+        # model in the same call instead of leaving the guest with silence.
+        headers["anthropic-beta"] = "server-side-fallback-2026-07-01"
+        body["fallbacks"] = "default"
+    data = await _post_adaptive(
+        "anthropic", "https://api.anthropic.com/v1/messages", headers=headers, json=body,
+        optional={"output_config": ("output_config", "effort"), "fallbacks": ("fallbacks",)},
     )
-    _raise_for_status(r, "anthropic")
-    data = r.json()
     parts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
-    return "".join(parts).strip()
+    text = "".join(parts).strip()
+    if not text and data.get("stop_reason") == "refusal":
+        raise AIError("The model declined to answer that.")
+    return text
 
 
 async def _chat_gemini(api_key: str, model: str, system_prompt: str,
@@ -237,15 +305,20 @@ async def _chat_gemini(api_key: str, model: str, system_prompt: str,
         role = "model" if m["role"] == "assistant" else "user"
         contents.append({"role": role, "parts": [{"text": m["content"]}]})
     contents.append({"role": "user", "parts": [{"text": prompt}]})
-    r = await _http().post(
+    gen: dict[str, Any] = {"maxOutputTokens": _max_tokens()}
+    if not model.startswith(("gemini-1", "gemini-2.0")):
+        # 2.5+ think by default and that counts toward maxOutputTokens.
+        gen["maxOutputTokens"] = _max_tokens() + _REASONING_HEADROOM
+        if not model.startswith("gemini-2"):
+            gen["thinkingConfig"] = {"thinkingLevel": "low"}
+    data = await _post_adaptive(
+        "gemini",
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         params={"key": api_key},
         json={"systemInstruction": {"parts": [{"text": system_prompt}]},
-              "contents": contents,
-              "generationConfig": {"maxOutputTokens": _max_tokens()}},
+              "contents": contents, "generationConfig": gen},
+        optional={"generationConfig.thinkingConfig": ("thinkingConfig", "thinkingLevel")},
     )
-    _raise_for_status(r, "gemini")
-    data = r.json()
     cand = (data.get("candidates") or [{}])[0]
     parts = cand.get("content", {}).get("parts", [])
     return "".join(p.get("text", "") for p in parts).strip()
@@ -261,10 +334,8 @@ async def enhance_image(image_bytes: bytes, prompt: str,
     edited image bytes. Defaults to OpenAI's image edit endpoint.
     """
     provider = db.get_setting("active_image_provider", "openai")
-    model = db.get_setting("active_image_model") or IMAGE_PROVIDERS[provider].default_model
-    info = IMAGE_PROVIDERS.get(provider)
-    if info is None:
-        raise AIError(f"Unknown image provider '{provider}'.")
+    model = resolve_model("image", provider)
+    info = IMAGE_PROVIDERS[provider]
     api_key = db.get_setting(info.key_name)
     if not api_key:
         raise AIError(f"No API key configured for {info.label}.")
@@ -535,6 +606,92 @@ def _drop_hallucination(text: str) -> str:
 # --------------------------------------------------------------------------
 # Utilities
 # --------------------------------------------------------------------------
+async def _post_adaptive(provider: str, url: str, *, json: dict[str, Any],
+                         headers: dict[str, str] | None = None,
+                         params: dict[str, str] | None = None,
+                         optional: dict[str, tuple[str, ...]] | None = None) -> dict[str, Any]:
+    """POST, and if a 400 names one of the `optional` fields, drop that field
+    and retry. New models keep rejecting knobs older ones accepted (and vice
+    versa); a kiosk should degrade to plain defaults, not go silent.
+    `optional` maps a dotted body path to words that identify it in the error."""
+    body = dict(json)
+    remaining = dict(optional or {})
+    while True:
+        r = await _http().post(url, headers=headers, params=params, json=body)
+        if r.status_code != 400 or not remaining:
+            break
+        err = r.text
+        hit = next((path for path, words in remaining.items()
+                    if any(w in err for w in words) and _pop_path(body, path)), None)
+        if hit is None:
+            break
+        remaining.pop(hit)
+    _raise_for_status(r, provider)
+    return r.json()
+
+
+def _pop_path(body: dict[str, Any], path: str) -> bool:
+    """Remove a dotted path from a (copied) request body; True if it existed."""
+    *parents, leaf = path.split(".")
+    node = body
+    for key in parents:
+        if not isinstance(node.get(key), dict):
+            return False
+        node[key] = dict(node[key])  # don't mutate the caller's nested dicts
+        node = node[key]
+    return node.pop(leaf, None) is not None
+
+
+# --------------------------------------------------------------------------
+# Live model lists (Admin -> AI Providers -> Refresh)
+# --------------------------------------------------------------------------
+_NOT_CHAT = ("audio", "realtime", "tts", "transcribe", "whisper", "image", "embedding",
+             "search", "moderation", "instruct", "dall-e", "imagen", "veo", "aqa", "live", "codex")
+
+
+async def list_models(provider: str, kind: str) -> list[str]:
+    """Model ids `provider` currently offers this key, filtered to `kind`
+    ('chat' | 'image' | 'tts' | 'stt'), newest-looking first."""
+    keys = {"openai": "api_key_openai", "anthropic": "api_key_anthropic",
+            "gemini": "api_key_gemini", "deepseek": "api_key_deepseek"}
+    if provider not in keys:
+        raise AIError(f"Unknown provider '{provider}'.")
+    api_key = db.get_setting(keys[provider])
+    if not api_key:
+        raise AIError(f"Add the {provider} API key first, then refresh.")
+
+    if provider == "gemini":
+        r = await _http().get("https://generativelanguage.googleapis.com/v1beta/models",
+                              params={"key": api_key, "pageSize": "1000"})
+        _raise_for_status(r, provider)
+        ids = [m["name"].removeprefix("models/") for m in r.json().get("models", [])
+               if "generateContent" in m.get("supportedGenerationMethods", [])]
+    else:
+        url, headers = {
+            "openai": ("https://api.openai.com/v1/models", {"Authorization": f"Bearer {api_key}"}),
+            "deepseek": ("https://api.deepseek.com/models", {"Authorization": f"Bearer {api_key}"}),
+            "anthropic": ("https://api.anthropic.com/v1/models?limit=1000",
+                          {"x-api-key": api_key, "anthropic-version": "2023-06-01"}),
+        }[provider]
+        r = await _http().get(url, headers=headers)
+        _raise_for_status(r, provider)
+        ids = [m["id"] for m in r.json().get("data", [])]
+
+    def wanted(mid: str) -> bool:
+        low = mid.lower()
+        if kind == "image":
+            return "image" in low and "imagen" not in low
+        if kind == "tts":
+            return "tts" in low
+        if kind == "stt":
+            return "transcribe" in low or low == "whisper-1"
+        if provider == "openai" and not low.startswith(("gpt-", "o1", "o3", "o4", "o5", "chatgpt")):
+            return False
+        return not any(word in low for word in _NOT_CHAT)
+
+    return sorted({i for i in ids if wanted(i) and i not in RETIRED_MODELS}, reverse=True)
+
+
 def _raise_for_status(r: httpx.Response, provider: str) -> None:
     if r.is_success:
         return

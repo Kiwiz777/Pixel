@@ -1,16 +1,19 @@
 <script setup>
 /**
- * Photobooth tab: AI-Enhance prompt, frame overlay (PNG) upload, and
+ * Photobooth tab: AI Enhance (single prompt or guest-picked style cards),
+ * frame overlay (PNG) upload, and
  * CUPS printer settings (default printer, copies, media, colour, test print).
  */
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { api } from '../../lib/api'
+import EnhanceCardsEditor from './EnhanceCardsEditor.vue'
 
 const props = defineProps({ settings: Object })
 const emit = defineEmits(['save', 'reload'])
 
 const form = reactive({
   ai_enhance_prompt: '',
+  enhance_mode: 'prompt',
   capture_countdown_seconds: 5,
   frame_overlay_display: 'both',
   print_copies: 1,
@@ -27,6 +30,10 @@ const backend = ref('')
 const defaultPrinter = ref('')
 const msg = ref('')
 const uploading = ref(false)
+// Edited locally; only replaced when the stored cards actually change, so an
+// unrelated save from this tab doesn't wipe edits in progress.
+const cards = ref([])
+let loadedCards = ''
 
 // Media names are printer-specific strings, so they come from the printer via
 // /api/printer/media rather than being typed by hand.
@@ -52,6 +59,12 @@ watch(
   (s) => {
     if (!s) return
     form.ai_enhance_prompt = s.ai_enhance_prompt ?? ''
+    form.enhance_mode = s.enhance_mode ?? 'prompt'
+    const stored = JSON.stringify(s.enhance_cards ?? [])
+    if (stored !== loadedCards) {
+      loadedCards = stored
+      cards.value = JSON.parse(stored)
+    }
     form.capture_countdown_seconds = s.capture_countdown_seconds ?? 5
     form.frame_overlay_display = s.frame_overlay_display ?? 'both'
     form.print_copies = s.print_copies ?? 1
@@ -121,8 +134,20 @@ async function testPrint() {
   }
 }
 
-function savePrompt() {
-  emit('save', { ai_enhance_prompt: form.ai_enhance_prompt })
+function saveEnhance() {
+  emit('save', {
+    ai_enhance_prompt: form.ai_enhance_prompt,
+    enhance_mode: form.enhance_mode,
+    enhance_cards: cards.value.map((c) => ({
+      emoji: (c.emoji || '').trim(),
+      title: (c.title || '').trim(),
+      description: (c.description || '').trim(),
+      prompt: (c.prompt || '').trim(),
+      color: c.color || '#F97316',
+      image: c.image || '',
+    })),
+  })
+  msg.value = 'AI Enhance settings saved.'
 }
 
 // Saves on change: it lives in the frame card, whose only Save button is in a
@@ -168,12 +193,45 @@ onMounted(loadPrinters)
       <p class="text-slate-400 mt-1">AI enhancement, photo frame and printer setup.</p>
     </header>
 
-    <!-- AI enhance prompt -->
+    <!-- AI enhance: one fixed prompt, or style cards the guest picks from -->
     <div class="glass-card p-5 sm:p-6 mb-5">
-      <h2 class="font-display text-lg font-semibold mb-3">AI Enhance Prompt</h2>
-      <textarea v-model="form.ai_enhance_prompt" rows="3" class="field" placeholder="Describe how photos should be transformed…"></textarea>
-      <p class="hint">Sent with every photo to the active image provider.</p>
-      <div class="flex justify-end mt-3"><button class="btn-accent btn-sm" @click="savePrompt">Save prompt</button></div>
+      <h2 class="font-display text-lg font-semibold mb-3">AI Enhance</h2>
+      <div class="grid sm:grid-cols-2 gap-3 mb-5" role="radiogroup" aria-label="AI Enhance mode">
+        <button
+          v-for="m in [
+            { id: 'prompt', label: 'Single prompt', hint: 'Every photo gets the same transformation.' },
+            { id: 'cards', label: 'Style cards', hint: 'Guests tap one of your big style cards.' },
+          ]"
+          :key="m.id"
+          type="button"
+          role="radio"
+          :aria-checked="form.enhance_mode === m.id"
+          class="rounded-2xl border p-4 text-left transition-colors"
+          :class="form.enhance_mode === m.id
+            ? 'border-brand-400/60 bg-brand-500/10'
+            : 'border-white/10 hover:bg-white/5'"
+          @click="form.enhance_mode = m.id"
+        >
+          <span class="font-display font-semibold">{{ m.label }}</span>
+          <span class="hint block">{{ m.hint }}</span>
+        </button>
+      </div>
+
+      <template v-if="form.enhance_mode === 'prompt'">
+        <label class="label" for="enhance-prompt">Prompt</label>
+        <textarea id="enhance-prompt" v-model="form.ai_enhance_prompt" rows="3" class="field" placeholder="Describe how photos should be transformed…"></textarea>
+        <p class="hint">Sent with every photo to the active image provider.</p>
+      </template>
+      <template v-else>
+        <p class="hint !mt-0 mb-4">
+          Guests see these cards when they tap <span class="text-slate-200">AI Enhance</span>.
+          1–4 cards show as big tiles; more fit as a smaller grid. Quiz rewards keep their own
+          prompt setting unless it's set to "Guest picks a style card".
+        </p>
+        <EnhanceCardsEditor v-model="cards" />
+      </template>
+
+      <div class="flex justify-end mt-4"><button class="btn-accent btn-sm" @click="saveEnhance">Save AI Enhance</button></div>
     </div>
 
     <!-- Frame overlay -->

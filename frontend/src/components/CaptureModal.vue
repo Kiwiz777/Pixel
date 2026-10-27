@@ -10,10 +10,15 @@
  *              no Save button; Email / WhatsApp show as plain buttons.
  * Any failure raises a notice with Retry, because the guest is standing
  * right there and can't be sent to a log.
+ *
+ * AI Enhance in "Style cards" mode (Admin -> Photobooth) opens a picker of big
+ * cards instead of using the fixed prompt; the server resolves the chosen
+ * card's prompt from its index.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { api } from '../lib/api'
 import VirtualKeyboard from './VirtualKeyboard.vue'
+import EnhanceStyleModal from './EnhanceStyleModal.vue'
 
 const props = defineProps({
   capture: { type: Object, required: true }, // { capture_id, raw_url, ... }
@@ -24,6 +29,9 @@ const props = defineProps({
   // Frame overlay preview. Empty string = don't show one here (Admin decides
   // whether the frame appears on the live view, this modal, or both).
   frameUrl: { type: String, default: '' },
+  // AI Enhance source: 'prompt' (Admin's fixed prompt) | 'cards' (guest picks).
+  enhanceMode: { type: String, default: 'prompt' },
+  enhanceCards: { type: Array, default: () => [] }, // public cards, no prompts
 })
 const emit = defineEmits(['retake', 'close', 'printed'])
 
@@ -32,6 +40,8 @@ const error = ref('')
 const enhancedUrl = ref('')
 const framedUrl = ref('')
 const toast = ref('')
+const showStyles = ref(false)
+const enhancedStyle = ref('') // title of the style card used, for the badge
 
 const shownUrl = computed(() => framedUrl.value || enhancedUrl.value || props.capture.raw_url)
 
@@ -58,6 +68,24 @@ const rewardBanner = computed(() => {
   return ''
 })
 
+// Style cards replace the fixed prompt - unless a quiz reward brings its own
+// prompt choice (fixed / list / typed), which wins for that reward.
+const useStyleCards = computed(() => {
+  if (!props.enhanceCards.length) return false
+  if (isEnhanceReward.value) return promptMode.value === 'cards'
+  return props.enhanceMode === 'cards'
+})
+
+function onEnhanceClick() {
+  if (useStyleCards.value) showStyles.value = true
+  else enhance()
+}
+
+function onStylePicked(card) {
+  showStyles.value = false
+  enhance(card)
+}
+
 // The prompt applied when the reward is an AI enhancement.
 const resolvedPrompt = computed(() => {
   if (!isEnhanceReward.value) return undefined
@@ -66,16 +94,19 @@ const resolvedPrompt = computed(() => {
   return props.reward?.prompt || undefined // admin-fixed prompt
 })
 
-async function enhance() {
+async function enhance(style = null) {
   error.value = ''
-  if (isEnhanceReward.value && promptMode.value === 'user' && !typedPrompt.value.trim()) {
+  if (!style && isEnhanceReward.value && promptMode.value === 'user' && !typedPrompt.value.trim()) {
     error.value = 'Type how you want your photo enhanced first.'
     return
   }
   busy.value = 'enhance'
   try {
-    const res = await api.enhance(props.capture.capture_id, resolvedPrompt.value)
+    const res = style
+      ? await api.enhance(props.capture.capture_id, null, style.index)
+      : await api.enhance(props.capture.capture_id, resolvedPrompt.value)
     enhancedUrl.value = res.enhanced_url + `?t=${Date.now()}`
+    enhancedStyle.value = style?.title || ''
     // The enhanced photo is a new version: keep the folder copy current.
     savedFile.value = ''
     if (shareOpts.value.auto_save) savePhoto()
@@ -359,7 +390,7 @@ onBeforeUnmount(() => {
         <span
           v-if="enhancedUrl"
           class="absolute top-3 left-3 rounded-full bg-electric-600/90 text-white text-xs font-semibold px-3 py-1"
-        >AI Enhanced</span>
+        >AI Enhanced<template v-if="enhancedStyle"> · {{ enhancedStyle }}</template></span>
       </div>
 
       <p v-if="error" class="hint text-red-300 mt-3" role="alert">{{ error }}</p>
@@ -370,7 +401,7 @@ onBeforeUnmount(() => {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 4v4h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Retake
         </button>
-        <button class="btn-accent" :disabled="!!busy" @click="enhance">
+        <button class="btn-accent" :disabled="!!busy" @click="onEnhanceClick">
           <span v-if="busy === 'enhance'" class="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
           <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 1.9 4.3L18 9l-4.1 1.7L12 15l-1.9-4.3L6 9l4.1-1.7L12 3Z"/><path d="M5 16l.9 2L8 19l-2.1.9L5 22l-.9-2L2 19l2.1-1L5 16Z"/></svg>
           AI Enhance
@@ -522,6 +553,14 @@ onBeforeUnmount(() => {
 
       <p class="hint text-center mt-3">Enhance uses your configured AI image provider · Print sends to the default CUPS printer.</p>
     </div>
+
+    <!-- AI Enhance style picker -->
+    <EnhanceStyleModal
+      v-if="showStyles"
+      :cards="enhanceCards"
+      @pick="onStylePicked"
+      @close="showStyles = false"
+    />
 
     <!-- toast -->
     <div v-if="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 glass rounded-2xl px-5 py-3 text-sm" aria-live="polite">

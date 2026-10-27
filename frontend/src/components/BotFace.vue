@@ -1,111 +1,68 @@
 <script setup>
 /**
- * BotFace - EMO-inspired companion face.
+ * BotFace - the kiosk's animated character.
  *
- * Deliberately NOT a boxy robot: no border, no antenna, no ears. Just a soft,
- * borderless dark "screen" with two expressive glowing cyan eyes (à la EMO the
- * desktop companion). Personality is carried almost entirely by the eyes.
- *
- * Still a placeholder you can upgrade: swap the <svg> internals for Lottie /
- * Canvas later without touching the public API.
+ * A thin shell around one of the avatars in ./avatars (robot, cartoon kid,
+ * receptionist, fox - chosen in Admin -> Avatar & Welcome). The shell owns the
+ * effects every character shares: glow halo, listening ripples, thinking dots,
+ * the state label, and the welcome hop. The avatar itself only draws the
+ * character and its expressions. Avatars marked `motion: 'subtle'` (the
+ * realistic receptionist) get none of the cartoon effects - just the halo,
+ * the label and a gentle nod on welcome.
  *
  * Public API:
- *   state: 'idle' | 'listening' | 'thinking' | 'speaking'
- *   mood:  'happy' | 'neutral' | 'curious'
- *   size:  px (number)
+ *   avatar: avatar id (see avatars/index.js); unknown ids fall back to robot
+ *   state:  'idle' | 'listening' | 'thinking' | 'speaking'
+ *   mood:   'happy' | 'neutral' | 'curious'
+ *   size:   px (number)
+ *   waving: true while welcoming a guest - hops and waves, layered on `state`
+ *   video:  real-person avatar clips + shape (ignored by the drawn avatars)
  */
 import { computed } from 'vue'
+import { avatarById } from './avatars'
 
 const props = defineProps({
+  avatar: { type: String, default: 'robot' },
   state: { type: String, default: 'idle' },
   mood: { type: String, default: 'happy' },
   size: { type: Number, default: 200 },
+  waving: { type: Boolean, default: false },
+  // Real-person avatar only: { clips: {idle, talking, ...} urls, shape }.
+  video: { type: Object, default: () => ({}) },
 })
 
-// Happy mood + idle/speaking => smiling arc eyes; otherwise rounded eyes.
-const happyEyes = computed(
-  () => props.mood === 'happy' && (props.state === 'idle' || props.state === 'speaking'),
-)
+const def = computed(() => avatarById(props.avatar))
+const subtle = computed(() => def.value.motion === 'subtle')
 const label = computed(
-  () => ({ idle: '', listening: 'Listening…', thinking: 'Thinking…', speaking: '' }[props.state] || ''),
-)
-
-// Eye geometry derived from state (keeps the template clean).
-const eyeW = computed(() => (props.state === 'thinking' ? 16 : 20))
-const eyeH = computed(() =>
-  props.state === 'listening' ? 46 : props.state === 'thinking' ? 16 : 36,
-)
-const thinkY = computed(() =>
-  props.state === 'thinking' ? 66 : props.state === 'listening' ? 56 : 60,
+  () => ({ listening: 'Listening…', thinking: 'Thinking…' }[props.state] || ''),
 )
 </script>
 
 <template>
-  <div class="botface select-none" :style="{ width: size + 'px' }" role="img" :aria-label="`Companion face, ${state}`">
-    <!-- soft glow halo -->
-    <span class="halo" :data-state="state"></span>
+  <div
+    class="botface select-none"
+    :class="{ 'is-waving': waving, subtle }"
+    :style="{ width: size + 'px', '--glow': def.glow }"
+    role="img"
+    :aria-label="`${def.label} avatar, ${waving ? 'waving hello' : state}`"
+  >
+    <span class="halo" :data-state="waving ? 'waving' : state"></span>
 
-    <!-- listening ripples -->
-    <template v-if="state === 'listening'">
+    <template v-if="state === 'listening' && !subtle">
       <span class="ripple animate-pulse-ring"></span>
       <span class="ripple animate-pulse-ring" style="animation-delay: 0.7s"></span>
     </template>
 
-    <svg
-      :class="['screen', { 'animate-bob-soft': state !== 'thinking' }]"
-      :width="size" :height="size * 0.82" viewBox="0 0 200 164" fill="none"
-    >
-      <defs>
-        <radialGradient id="bf-screen" cx="50%" cy="38%" r="75%">
-          <stop offset="0" stop-color="#0e1830" />
-          <stop offset="1" stop-color="#05070f" />
-        </radialGradient>
-        <linearGradient id="bf-eye" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#7df0ff" />
-          <stop offset="1" stop-color="#22d3ee" />
-        </linearGradient>
-        <filter id="bf-eyeglow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="3" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
+    <div :class="['figure', { 'animate-bob-soft': state !== 'thinking' && !waving && !subtle }]">
+      <component
+        :is="def.comp" :state="state" :mood="mood" :size="size" :waving="waving"
+        v-bind="def.video ? { video } : {}"
+      />
+    </div>
 
-      <!-- borderless dark screen (no stroke = no robot box) -->
-      <rect x="6" y="6" width="188" height="152" rx="44" fill="url(#bf-screen)" />
-      <!-- faint top sheen so it reads as a glassy display, not a flat box -->
-      <rect x="20" y="16" width="160" height="40" rx="20" fill="#ffffff" opacity="0.04" />
-
-      <!-- EYES -->
-      <g filter="url(#bf-eyeglow)" :class="['eyes', state]">
-        <!-- Happy arc eyes (smiling) -->
-        <template v-if="happyEyes">
-          <path d="M52 96 Q70 70 88 96" stroke="url(#bf-eye)" stroke-width="13" stroke-linecap="round" fill="none" />
-          <path d="M112 96 Q130 70 148 96" stroke="url(#bf-eye)" stroke-width="13" stroke-linecap="round" fill="none" />
-        </template>
-
-        <!-- Rounded rectangle eyes (listening / thinking / neutral) -->
-        <template v-else>
-          <rect class="eye animate-blink" :x="58" :y="thinkY" :width="eyeW" :height="eyeH" :rx="eyeW / 2" fill="url(#bf-eye)" />
-          <rect class="eye animate-blink" :x="122" :y="thinkY" :width="eyeW" :height="eyeH" :rx="eyeW / 2" fill="url(#bf-eye)" />
-          <circle :cx="64" :cy="thinkY + 8" r="3.5" fill="#ffffff" opacity="0.85" />
-          <circle :cx="128" :cy="thinkY + 8" r="3.5" fill="#ffffff" opacity="0.85" />
-        </template>
-      </g>
-
-      <!-- speaking: soft equaliser mouth -->
-      <g v-if="state === 'speaking'" fill="#22d3ee" opacity="0.95">
-        <rect class="bar b1" x="84" y="120" width="7" height="14" rx="3.5" />
-        <rect class="bar b2" x="96.5" y="116" width="7" height="22" rx="3.5" />
-        <rect class="bar b3" x="109" y="120" width="7" height="14" rx="3.5" />
-      </g>
-
-      <!-- thinking: floating dots -->
-      <g v-if="state === 'thinking'" class="think" fill="#7df0ff">
-        <circle class="d1" cx="150" cy="40" r="3.5" />
-        <circle class="d2" cx="163" cy="32" r="4.5" />
-        <circle class="d3" cx="178" cy="26" r="5.5" />
-      </g>
-    </svg>
+    <div v-if="state === 'thinking' && !subtle" class="think" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
 
     <p v-if="label" class="state-label font-display">{{ label }}</p>
   </div>
@@ -117,7 +74,7 @@ const thinkY = computed(() =>
   display: grid;
   place-items: center;
 }
-.screen {
+.figure {
   position: relative;
   z-index: 2;
   filter: drop-shadow(0 16px 40px rgba(2, 8, 23, 0.6));
@@ -127,13 +84,14 @@ const thinkY = computed(() =>
   inset: 6%;
   z-index: 0;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(34, 211, 238, 0.35), transparent 65%);
+  background: radial-gradient(circle, rgba(var(--glow), 0.35), transparent 65%);
   filter: blur(18px);
-  transition: opacity 0.4s ease;
+  transition: opacity 0.4s ease, transform 0.4s ease;
   opacity: 0.55;
 }
 .halo[data-state='listening'] { opacity: 0.9; }
 .halo[data-state='thinking'] { opacity: 0.4; }
+.halo[data-state='waving'] { opacity: 1; transform: scale(1.15); }
 
 .ripple {
   position: absolute;
@@ -141,43 +99,64 @@ const thinkY = computed(() =>
   width: 66%;
   height: 66%;
   border-radius: 9999px;
-  border: 2px solid rgba(34, 211, 238, 0.6);
+  border: 2px solid rgba(var(--glow), 0.6);
 }
 
-.state-label {
-  margin-top: 0.35rem;
-  font-size: 0.9rem;
-  color: #a5f3fc;
+/* Welcome: a couple of happy hops, then settle. */
+.is-waving .figure {
+  animation: hop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 3;
+}
+@keyframes hop {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  40% { transform: translateY(-14px) rotate(-3deg); }
+  70% { transform: translateY(-4px) rotate(2deg); }
 }
 
-.eye { transform-origin: center; transform-box: fill-box; }
-.eyes.thinking { animation: glance 2.4s ease-in-out infinite; }
-@keyframes glance {
-  0%, 100% { transform: translateX(0); }
-  35% { transform: translateX(7px); }
-  70% { transform: translateX(-6px); }
+/* Realistic avatars: a calm nod instead of hopping, quieter glow. */
+.subtle .halo { opacity: 0.35; }
+.subtle .halo[data-state='listening'] { opacity: 0.6; }
+.subtle.is-waving .figure {
+  animation: nod 1.4s cubic-bezier(0.25, 1, 0.5, 1) 1;
+}
+@keyframes nod {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(-4px); }
+  65% { transform: translateY(1px); }
 }
 
-.bar { transform-origin: center; transform-box: fill-box; }
-.b1 { animation: eq 0.5s ease-in-out infinite; }
-.b2 { animation: eq 0.5s ease-in-out infinite 0.12s; }
-.b3 { animation: eq 0.5s ease-in-out infinite 0.24s; }
-@keyframes eq {
-  0%, 100% { transform: scaleY(0.5); }
-  50% { transform: scaleY(1.25); }
+.think {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 2%;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
 }
-
-.think circle { opacity: 0; }
-.think .d1 { animation: rise 1.6s infinite 0s; }
-.think .d2 { animation: rise 1.6s infinite 0.22s; }
-.think .d3 { animation: rise 1.6s infinite 0.44s; }
+.think span {
+  display: block;
+  border-radius: 9999px;
+  background: rgb(var(--glow));
+  opacity: 0;
+  animation: rise 1.6s infinite;
+}
+.think span:nth-child(1) { width: 7px; height: 7px; }
+.think span:nth-child(2) { width: 9px; height: 9px; animation-delay: 0.22s; }
+.think span:nth-child(3) { width: 11px; height: 11px; animation-delay: 0.44s; }
 @keyframes rise {
   0% { opacity: 0; transform: translateY(4px); }
   45% { opacity: 1; transform: translateY(0); }
   100% { opacity: 0; transform: translateY(-5px); }
 }
 
+.state-label {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+  color: #e0f2fe;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .eyes, .bar, .think circle, .halo { animation: none !important; }
+  .figure, .think span, .halo { animation: none !important; }
+  .think span { opacity: 1; }
 }
 </style>

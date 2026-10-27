@@ -47,7 +47,7 @@ const glowColor2 = computed(() => props.theme?.glow_color_2 || '#38BDF8')
 const borderColor = computed(() => props.theme?.border_color || '#F8FAFC')
 const labelColor = computed(() => props.theme?.label_color || '#F8FAFC')
 const labelFontFamily = computed(() =>
-  props.theme?.label_font === 'display' ? 'Fredoka, system-ui, sans-serif' : 'Nunito, system-ui, sans-serif',
+  props.theme?.label_font === 'display' ? 'var(--font-display), system-ui, sans-serif' : 'var(--font-body), system-ui, sans-serif',
 )
 const frameImageUrl = computed(() => props.theme?.frame_image || '')
 const backgroundImageUrl = computed(() => props.theme?.background_image || '')
@@ -284,7 +284,7 @@ onBeforeUnmount(clearTimers)
         <text
           :transform="labelTransform(i)"
           :fill="labelColor" :font-size="fontSize" font-weight="800"
-          :font-family="labelFontFamily" text-anchor="middle" dominant-baseline="middle"
+          :style="{ fontFamily: labelFontFamily }" text-anchor="middle" dominant-baseline="middle"
           style="paint-order: stroke; stroke: #0b1120; stroke-width: 3.5px; stroke-opacity: 0.55;"
           :opacity="landed && i !== winner ? 0.4 : 1"
         >

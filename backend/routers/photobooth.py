@@ -1,9 +1,13 @@
 """Kiosk-facing photobooth endpoints: capture, enhance, frame, print, upload frame."""
 from __future__ import annotations
 
+import io
+import uuid
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 import ai_brain
+import config
 import database as db
 import image_processor
 import printer as printer_service
@@ -53,9 +57,16 @@ async def delete_background(file: str, _: bool = Depends(require_admin)):
 
 @router.post("/enhance")
 async def enhance(payload: EnhanceRequest):
+    prompt = payload.prompt
+    if payload.style_index is not None:
+        cards = db.get_setting("enhance_cards", []) or []
+        card = cards[payload.style_index] if 0 <= payload.style_index < len(cards) else None
+        if not isinstance(card, dict) or not str(card.get("prompt") or "").strip():
+            raise HTTPException(status_code=400, detail="That style is no longer available.")
+        prompt = card["prompt"]
     try:
         return await image_processor.enhance(
-            payload.capture_id, prompt=payload.prompt, user_id=payload.user_id
+            payload.capture_id, prompt=prompt, user_id=payload.user_id
         )
     except ai_brain.AIError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -80,6 +91,25 @@ async def print_capture(payload: PrintRequest):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/style-image")
+async def upload_style_image(file: UploadFile = File(...), _: bool = Depends(require_admin)):
+    """Admin: artwork for an AI Enhance style card. The caller stores the
+    returned name in that card's `image` via PUT /api/settings."""
+    from PIL import Image
+
+    data = await file.read()
+    try:
+        Image.open(io.BytesIO(data)).verify()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+    ext = (file.filename or "style.png").rsplit(".", 1)[-1].lower()
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        ext = "png"
+    name = f"style-{uuid.uuid4().hex[:10]}.{ext}"
+    (config.STYLES_DIR / name).write_bytes(data)
+    return {"ok": True, "image": name, "url": f"/media/styles/{name}"}
 
 
 @router.post("/frame-overlay")

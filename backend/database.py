@@ -48,9 +48,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "api_key_elevenlabs": "",
     # --- Active providers / models ---
     "active_chat_provider": "anthropic",          # openai|anthropic|gemini|deepseek
-    "active_chat_model": "claude-opus-4-8",
+    "active_chat_model": "",                      # "" = provider default (ai_brain registry)
     "active_image_provider": "openai",            # provider used for AI Enhance
-    "active_image_model": "gpt-image-1",
+    "active_image_model": "",                     # "" = provider default
     # Text-to-speech: provider-agnostic so ElevenLabs is optional.
     "tts_provider": "openai",                     # openai | elevenlabs
     "tts_voice_id": "",                           # ElevenLabs voice id
@@ -60,9 +60,59 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # --- Bot behaviour ---
     "auto_interact_mode": True,                   # greet faces automatically
     "interact_button_visible": True,              # show "Talk to Me" button
-    "bot_face_visible": True,                     # show the floating EMO robot face on the kiosk
+    "bot_face_visible": True,                     # show the floating avatar on the kiosk
+    "ui_font": "playful",                         # playful | clean | futuristic | elegant (frontend/src/fonts.css)
+    # Which character fronts the kiosk (see frontend/src/components/avatars).
+    "avatar_style": "robot",                      # robot | kid | receptionist | fox
+    "avatar_name": "Pixel",                       # shown on the speech bubble ("Pixel says")
+    # avatar_style "video": a real person from uploaded clips (filmed or
+    # AI-generated). {state: file under DATA_DIR/avatar}; idle is required.
+    "video_avatar": {"idle": "", "talking": "", "listening": "", "thinking": "", "wave": ""},
+    "video_avatar_shape": "rounded",              # rounded | circle | cutout (transparent WebM)
+    "video_avatar_scale": 1.6,                    # size vs the cartoon avatars
+    # What happens when a face is held in frame (needs auto_interact_mode):
+    #   welcome - the avatar waves and says one welcome line. No chat, no mic.
+    #   chat    - greet, then hold a voice conversation (onboards new faces).
+    "auto_interact_style": "welcome",
+    # One line each; a random one is used. {name} = a recognised guest's name.
+    "welcome_messages": "Hi there! Welcome — come snap a photo with me! 📸\n"
+                        "Hello! Great to see you. Ready for an awesome photo?\n"
+                        "Welcome! Strike a pose and tap Capture Photo!",
+    "welcome_back_messages": "Welcome back, {name}! 🎉\n"
+                             "Hey {name}, great to see you again!",
+    "welcome_speak": True,                        # say the welcome out loud (TTS)
+    # Where the welcome voice comes from:
+    #   live  - TTS each time (needs internet + key; falls back to a saved clip).
+    #   saved - only pre-generated clips (voice_clips.py): offline, no token cost.
+    "welcome_voice_mode": "live",
+    "welcome_voice_clips": {},                    # manifest written by voice_clips.generate()
+    "greet_dwell_seconds": 2,                     # face held this long before greeting
+    "greet_cooldown_seconds": 20,                 # min gap between greetings
     "ai_enhance_prompt": "Enhance this portrait: studio lighting, vibrant, "
                           "clean background, keep the person's identity intact.",
+    # AI Enhance source:
+    #   prompt - every enhance uses ai_enhance_prompt.
+    #   cards  - the guest picks one of `enhance_cards` (title/description on a
+    #            big card; the prompt stays server-side).
+    "enhance_mode": "prompt",
+    "enhance_cards": [
+        {"emoji": "🎨", "title": "Cartoon Pop", "color": "#F97316", "image": "",
+         "description": "Bold, bright comic-book colours",
+         "prompt": "Turn this photo into a vibrant cartoon illustration with bold outlines "
+                   "and bright pop-art colours. Keep every person recognisable."},
+        {"emoji": "🎞️", "title": "Vintage Film", "color": "#D97706", "image": "",
+         "description": "Warm 70s tones and soft grain",
+         "prompt": "Give this photo a warm 1970s analog film look: soft grain, faded "
+                   "warm tones, gentle vignette. Keep faces natural and recognisable."},
+        {"emoji": "🌆", "title": "Neon Night", "color": "#8B5CF6", "image": "",
+         "description": "Cyberpunk city lights and glow",
+         "prompt": "Restyle this photo as a neon cyberpunk night scene with glowing pink "
+                   "and blue city lights. Keep every person's identity intact."},
+        {"emoji": "✨", "title": "Studio Glam", "color": "#2563EB", "image": "",
+         "description": "Magazine-cover lighting and polish",
+         "prompt": "Enhance this portrait like a magazine cover shoot: flattering studio "
+                   "lighting, clean backdrop, polished colours. Keep identities intact."},
+    ],
     "default_language": "en",                     # en|ar-EG|ar-GULF|ru|de|fr
     "multilingual_autodetect": True,
     "system_persona": "You are Pixel, a cheerful multilingual photobooth robot. "
@@ -153,6 +203,18 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "kiosk_bg_media": [],                         # list of {file, type} under data/backgrounds
     "kiosk_bg_slideshow_ms": 6000,                # per-slide duration for slideshow
     "kiosk_bg_dim": 35,                           # darken overlay 0-100 for legibility
+    # Attract mode: the kiosk shows ONLY the background until a face is seen,
+    # then the camera, avatar and buttons materialise. Back to background-only
+    # after the photo session, or when nobody has been around for a while.
+    # The camera keeps running (hidden) so it can spot the next guest.
+    "attract_mode_enabled": False,
+    "attract_reveal_seconds": 1,                  # face held this long before revealing
+    "attract_idle_seconds": 20,                   # no face + no taps this long -> background only
+    "attract_return_after_session": True,         # back to background once the photo is done
+    "attract_rest_seconds": 8,                    # after a session: ignore faces this long
+    "attract_review_idle_seconds": 45,            # photo review left untouched this long ends the session
+    "attract_tap_to_wake": True,                  # a tap anywhere also reveals the kiosk
+    "attract_hint": "",                           # optional line shown over the background
     # Cap on reply length. Short replies are faster twice over: less time
     # generating, and TTS cost scales with character count. ~120 tokens is
     # 2-3 spoken sentences, which is all a photobooth greeting needs.

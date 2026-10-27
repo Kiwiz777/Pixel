@@ -8,6 +8,7 @@ import * as diag from './useDiagnostics'
  * Exposes a reactive `botState` ('idle'|'listening'|'thinking'|'speaking') that
  * drives <BotFace/>, plus:
  *   - ask(prompt)            : one-shot LLM turn (+TTS)
+ *   - speak(text)            : say fixed text (TTS only - no LLM, no mic)
  *   - startListening(lang)   : single voice turn (record -> STT -> ask), VAD auto-stops
  *   - converse(lang, opener) : full back-and-forth loop (greet -> listen -> reply -> ...)
  *
@@ -150,6 +151,26 @@ export function useBot() {
   }
 
   /**
+   * Say a fixed line out loud - the welcome-on-arrival greeting. No LLM call
+   * and nothing added to the thread: it's a hello, not a conversation turn.
+   *
+   *   src         - a saved clip URL: play it, no TTS call (offline, free).
+   *   fallbackSrc - live TTS first; if that fails (no internet / no key),
+   *                 play this saved clip instead of going silent.
+   */
+  async function speak(text, { src = null, fallbackSrc = null } = {}) {
+    if (!text?.trim()) return
+    diag.logEvent('bot', text, src ? 'welcome · saved voice' : 'welcome')
+    if (src) return playSrc(src)
+    try {
+      await playAudio(await diag.timed('tts', () => api.tts(text)))
+    } catch {
+      if (fallbackSrc) return playSrc(fallbackSrc)
+      setState('idle') // voice is optional; the bubble already shows the text
+    }
+  }
+
+  /**
    * Change the language mid-conversation.
    *
    * Recording starts the instant the guest taps, but the language hint isn't
@@ -176,12 +197,17 @@ export function useBot() {
   }
 
   function playAudio(blob) {
+    const url = URL.createObjectURL(blob)
+    // Revoke afterwards, otherwise every turn leaks a blob.
+    return playSrc(url).finally(() => URL.revokeObjectURL(url))
+  }
+
+  /** Play any audio URL (a TTS blob URL or a saved clip) with the speaking face. */
+  function playSrc(src) {
     return new Promise((resolve) => {
       setState('speaking')
-      const url = URL.createObjectURL(blob)
-      audioEl = new Audio(url)
+      audioEl = new Audio(src)
       const done = () => {
-        URL.revokeObjectURL(url) // otherwise every turn leaks a blob
         setState('idle')
         resolve()
       }
@@ -451,7 +477,7 @@ export function useBot() {
 
   return {
     botState, lastUser, lastReply, error, history, conversing, listenIssue,
-    ask, startListening, stopListening, listenOnce, isRecording, setState,
+    ask, speak, startListening, stopListening, listenOnce, isRecording, setState,
     converse, endConversation, resetConversation, reportListenIssue,
     setConversationLanguage,
   }

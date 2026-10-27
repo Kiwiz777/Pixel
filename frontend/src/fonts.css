@@ -1,0 +1,62 @@
+/*
+ * App font sets (Admin -> General -> Font). Bundled from @fontsource so they
+ * work on an offline kiosk - no Google Fonts request at the event.
+ *
+ * Each set fills two variables: --font-display (headings, buttons) and
+ * --font-body (everything else). Tailwind's `font-display` / `font-sans` read
+ * them. `data-font` is set on <html> (lib/fonts.js) and also works on any
+ * element, which is how the Admin picker previews each set.
+ */
+@import '@fontsource/fredoka/400.css';
+@import '@fontsource/fredoka/500.css';
+@import '@fontsource/fredoka/600.css';
+@import '@fontsource/fredoka/700.css';
+@import '@fontsource/nunito/400.css';
+@import '@fontsource/nunito/600.css';
+@import '@fontsource/nunito/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/orbitron/500.css';
+@import '@fontsource/orbitron/600.css';
+@import '@fontsource/orbitron/700.css';
+@import '@fontsource/exo-2/400.css';
+@import '@fontsource/exo-2/500.css';
+@import '@fontsource/exo-2/600.css';
+@import '@fontsource/exo-2/700.css';
+@import '@fontsource/playfair-display/500.css';
+@import '@fontsource/playfair-display/600.css';
+@import '@fontsource/playfair-display/700.css';
+@import '@fontsource/lato/400.css';
+@import '@fontsource/lato/700.css';
+
+/* playful (default) - the original Liquid Glass pairing */
+:root,
+[data-font='playful'] {
+  --font-display: 'Fredoka';
+  --font-body: 'Nunito';
+  --font-display-tracking: normal;
+}
+/* clean - one neutral sans, the "normal" look */
+[data-font='clean'] {
+  --font-display: 'Inter';
+  --font-body: 'Inter';
+  --font-display-tracking: -0.01em;
+}
+/* futuristic - wide geometric display + techy body, for the 2050 look */
+[data-font='futuristic'] {
+  --font-display: 'Orbitron';
+  --font-body: 'Exo 2';
+  --font-display-tracking: 0.04em;
+}
+/* elegant - serif headings, for galas and weddings */
+[data-font='elegant'] {
+  --font-display: 'Playfair Display';
+  --font-body: 'Lato';
+  --font-display-tracking: normal;
+}
+
+.font-display {
+  letter-spacing: var(--font-display-tracking);
+}

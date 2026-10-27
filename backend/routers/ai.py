@@ -5,13 +5,15 @@ import base64
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 import ai_brain
 import database as db
-from schemas import ChatRequest, TTSRequest
+import voice_clips
+from schemas import ChatRequest, TTSRequest, VoiceClipsRequest
+from security import require_admin
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -63,6 +65,13 @@ async def tts(payload: TTSRequest):
     except ai_brain.AIError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return Response(content=audio, media_type="audio/mpeg")
+
+
+@router.post("/voice-clips")
+async def save_voice_clips(payload: VoiceClipsRequest, _: bool = Depends(require_admin)):
+    """Admin: synthesise the welcome lines once and keep the MP3s, so the
+    kiosk can greet offline without spending tokens (see voice_clips.py)."""
+    return await voice_clips.generate(payload.texts)
 
 
 @router.post("/stt")

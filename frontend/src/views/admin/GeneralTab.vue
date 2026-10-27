@@ -1,6 +1,7 @@
 <script setup>
 import { reactive, watch } from 'vue'
 import ToggleSwitch from '../../components/ToggleSwitch.vue'
+import { FONT_SETS } from '../../lib/fonts'
 
 const props = defineProps({ settings: Object, languages: Array })
 const emit = defineEmits(['save'])
@@ -14,6 +15,7 @@ const form = reactive({
   system_persona: '',
   dev_mode: false,
   bot_face_visible: true,
+  ui_font: 'playful',
   // Camera behaviour (global kiosk settings)
   kiosk_camera_autostart: true,
   camera_off_after_session: false,
@@ -55,7 +57,7 @@ function save() {
       <ToggleSwitch
         v-model="form.auto_interact_mode"
         label="Auto-Interact Mode"
-        hint="When a face is detected, Pixel greets the guest automatically. Requires Face Recognition to be on."
+        hint="When a face is detected, the avatar greets the guest automatically — wave only, or wave and chat (see Avatar &amp; Welcome). Requires Face Recognition to be on."
       />
       <ToggleSwitch
         v-model="form.interact_button_visible"
@@ -64,8 +66,8 @@ function save() {
       />
       <ToggleSwitch
         v-model="form.bot_face_visible"
-        label="Show robot face animation"
-        hint="Display the floating EMO-style robot face on the kiosk camera view."
+        label="Show avatar"
+        hint="Display the floating animated character on the kiosk (pick which one in Avatar &amp; Welcome)."
       />
       <ToggleSwitch
         v-model="form.multilingual_autodetect"
@@ -91,6 +93,25 @@ function save() {
         <label class="label" for="persona">Bot Persona / System Prompt</label>
         <textarea id="persona" v-model="form.system_persona" rows="3" class="field" placeholder="You are Pixel, a cheerful multilingual photobooth robot…"></textarea>
         <p class="hint">Sets Pixel's personality and tone across every provider.</p>
+      </div>
+    </div>
+
+    <div class="glass-card p-5 sm:p-6 mt-5">
+      <h2 class="font-display text-lg font-semibold">Font</h2>
+      <p class="hint !mt-0.5 mb-4">Used across the kiosk and this dashboard. Applies when you save.</p>
+      <div class="grid sm:grid-cols-2 gap-3" role="radiogroup" aria-label="App font">
+        <button
+          v-for="f in FONT_SETS" :key="f.id"
+          type="button" role="radio" :aria-checked="form.ui_font === f.id"
+          :data-font="f.id"
+          class="rounded-2xl border p-4 text-left transition-colors"
+          :class="form.ui_font === f.id ? 'border-brand-400/60 bg-brand-500/10' : 'border-white/10 hover:bg-white/5'"
+          @click="form.ui_font = f.id"
+        >
+          <span class="block font-display text-2xl font-semibold">{{ f.label }}</span>
+          <span class="block font-sans text-slate-300 mt-1">Capture Photo · Take the Quiz · 0123</span>
+          <span class="hint block font-sans">{{ f.description }}</span>
+        </button>
       </div>
     </div>
 

@@ -55,6 +55,9 @@ FACES_DIR = DATA_DIR / "faces"                # known-face reference images
 BACKGROUNDS_DIR = DATA_DIR / "backgrounds"    # kiosk background images/videos
 REWARDS_DIR = DATA_DIR / "rewards"            # quiz reward images shown to winners
 WHEEL_DIR = DATA_DIR / "wheel"                # prize-wheel custom frame/background art
+STYLES_DIR = DATA_DIR / "styles"              # AI Enhance style-card artwork
+VOICE_DIR = DATA_DIR / "voice"                # saved (pre-generated) TTS clips
+AVATAR_DIR = DATA_DIR / "avatar"              # real-person video avatar clips
 RECORDINGS_DIR = DATA_DIR / "recordings"      # kept STT audio, for playback/debugging
 WHATSAPP_DIR = DATA_DIR / "whatsapp"          # linked-device session (keep private)
 DB_PATH = Path(os.getenv("PB_DB_PATH", DATA_DIR / "photobooth.db"))
@@ -66,7 +69,7 @@ PHOTOS_DIR = Path(os.getenv("PB_PHOTOS_DIR", DATA_DIR / "photos"))
 
 try:
     for _d in (DATA_DIR, CAPTURES_DIR, FRAMES_DIR, FACES_DIR, BACKGROUNDS_DIR,
-               REWARDS_DIR, WHEEL_DIR, RECORDINGS_DIR, WHATSAPP_DIR, PHOTOS_DIR):
+               REWARDS_DIR, WHEEL_DIR, STYLES_DIR, VOICE_DIR, AVATAR_DIR, RECORDINGS_DIR, WHATSAPP_DIR, PHOTOS_DIR):
         _d.mkdir(parents=True, exist_ok=True)
 except OSError as _exc:  # read-only or unwritable state dir - fail loudly, not weirdly
     raise RuntimeError(

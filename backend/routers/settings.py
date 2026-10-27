@@ -10,6 +10,7 @@ import ai_brain
 import config
 import database as db
 import image_processor
+import voice_clips
 from schemas import SettingsUpdate
 from security import require_admin
 
@@ -68,9 +69,104 @@ async def public_settings():
         "kiosk_bg_media": db.get_setting("kiosk_bg_media", []),
         "kiosk_bg_slideshow_ms": db.get_setting("kiosk_bg_slideshow_ms", 6000),
         "kiosk_bg_dim": db.get_setting("kiosk_bg_dim", 35),
+        # Attract mode (background only until a face is seen)
+        "attract_mode_enabled": db.get_setting("attract_mode_enabled", False),
+        "attract_reveal_seconds": db.get_setting("attract_reveal_seconds", 1),
+        "attract_idle_seconds": db.get_setting("attract_idle_seconds", 20),
+        "attract_return_after_session": db.get_setting("attract_return_after_session", True),
+        "attract_rest_seconds": db.get_setting("attract_rest_seconds", 8),
+        "attract_review_idle_seconds": db.get_setting("attract_review_idle_seconds", 45),
+        "ui_font": db.get_setting("ui_font", "playful"),
+        "attract_tap_to_wake": db.get_setting("attract_tap_to_wake", True),
+        "attract_hint": db.get_setting("attract_hint", ""),
         # Prize wheel look (global, shared by every quiz)
         "wheel_style": db.get_setting("wheel_style", {}),
+        # Avatar + welcome-on-arrival
+        "avatar_style": db.get_setting("avatar_style", "robot"),
+        "avatar_name": db.get_setting("avatar_name", "Pixel"),
+        "video_avatar": {
+            state: f"/media/avatar/{name}"
+            for state, name in (db.get_setting("video_avatar", {}) or {}).items()
+            if name and (config.AVATAR_DIR / name).exists()
+        },
+        "video_avatar_shape": db.get_setting("video_avatar_shape", "rounded"),
+        "video_avatar_scale": db.get_setting("video_avatar_scale", 1.6),
+        "auto_interact_style": db.get_setting("auto_interact_style", "welcome"),
+        "welcome_messages": db.get_setting("welcome_messages", ""),
+        "welcome_back_messages": db.get_setting("welcome_back_messages", ""),
+        "welcome_speak": db.get_setting("welcome_speak", True),
+        "welcome_voice_mode": db.get_setting("welcome_voice_mode", "live"),
+        "welcome_voice_clips": voice_clips.public_clips(),   # {line: url}
+        "greet_dwell_seconds": db.get_setting("greet_dwell_seconds", 2),
+        "greet_cooldown_seconds": db.get_setting("greet_cooldown_seconds", 20),
+        # AI Enhance style cards - prompts stripped; the kiosk sends the index.
+        "enhance_mode": db.get_setting("enhance_mode", "prompt"),
+        "enhance_cards": public_enhance_cards(),
     }
+
+
+def public_enhance_cards() -> list[dict]:
+    """Usable cards (title + prompt set) without their prompts. `index` is the
+    position in the stored list, which is what /photobooth/enhance resolves."""
+    cards = db.get_setting("enhance_cards", []) or []
+    return [
+        {"index": i, **{k: str(c.get(k) or "") for k in ("title", "description", "emoji", "color", "image")}}
+        for i, c in enumerate(cards)
+        if isinstance(c, dict) and str(c.get("title") or "").strip() and str(c.get("prompt") or "").strip()
+    ]
+
+
+VIDEO_AVATAR_STATES = ("idle", "talking", "listening", "thinking", "wave")
+VIDEO_AVATAR_MAX_BYTES = 80 * 1024 * 1024
+
+
+@router.post("/avatar-video/{state}")
+async def upload_avatar_video(state: str, file: UploadFile = File(...), _: bool = Depends(require_admin)):
+    """Upload one clip of the real-person video avatar. MP4 (H.264) or WebM;
+    a WebM with transparency gives the cut-out look. Replaces that state's
+    previous clip."""
+    if state not in VIDEO_AVATAR_STATES:
+        raise HTTPException(status_code=400, detail=f"state must be one of {', '.join(VIDEO_AVATAR_STATES)}")
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ("mp4", "m4v", "webm"):
+        raise HTTPException(status_code=400, detail="Use an MP4 (H.264) or WebM video.")
+    data = await file.read()
+    if len(data) > VIDEO_AVATAR_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Clip is over 80 MB - trim it or lower the resolution.")
+    name = f"{state}-{uuid.uuid4().hex[:10]}.{ext}"
+    (config.AVATAR_DIR / name).write_bytes(data)
+    return {"ok": True, "video_avatar": _set_avatar_clip(state, name)}
+
+
+@router.delete("/avatar-video/{state}")
+async def delete_avatar_video(state: str, _: bool = Depends(require_admin)):
+    if state not in VIDEO_AVATAR_STATES:
+        raise HTTPException(status_code=400, detail="Unknown state.")
+    return {"ok": True, "video_avatar": _set_avatar_clip(state, "")}
+
+
+def _set_avatar_clip(state: str, name: str) -> dict:
+    clips = dict(db.get_setting("video_avatar", {}) or {})
+    old = clips.get(state)
+    if old and old != name:
+        (config.AVATAR_DIR / old).unlink(missing_ok=True)
+    clips[state] = name
+    db.set_setting("video_avatar", clips)
+    return clips
+
+
+@router.get("/models/{kind}/{provider}")
+async def live_models(kind: str, provider: str, _: bool = Depends(require_admin)):
+    """Live model list from the provider (Admin "Refresh"), filtered to
+    kind = chat | image | tts | stt."""
+    if kind not in ("chat", "image", "tts", "stt"):
+        raise HTTPException(status_code=400, detail="kind must be chat, image, tts or stt")
+    try:
+        return {"models": await ai_brain.list_models(provider, kind)}
+    except ai_brain.AIError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # network down, provider outage
+        raise HTTPException(status_code=502, detail=f"Could not reach {provider}: {e}")
 
 
 @router.get("/voices")

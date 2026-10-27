@@ -9,6 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/exo-2": "^5.3.0",
+    "@fontsource/fredoka": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/lato": "^5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "@fontsource/orbitron": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
     "face-api.js": "^0.22.2",
     "pinia": "^2.1.7",
     "vue": "^3.4.21",

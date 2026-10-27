@@ -8,11 +8,15 @@ import { onBeforeUnmount } from 'vue'
  * camera"), for `dwellMs` (default 3s). After firing it waits for a cooldown +
  * the face to leave before it can fire again — so one engagement per visitor.
  *
+ * `dwellMs` and `cooldownMs` may be numbers or getters, so Admin changes to
+ * the greeting timing apply without reloading the kiosk.
+ *
  * In dev mode it draws an overlay on `canvas` with the detection box, score,
  * and (throttled) the recognised name + match distance.
  */
 export function useFaceWatch(faceId, {
   onTrigger,
+  onTick,               // (seen, big) every poll - presence for the kiosk's attract mode
   recognize,            // async (descriptor) => {name, distance}|null  (dev label)
   isDevMode = () => false,
   dwellMs = 3000,
@@ -29,6 +33,7 @@ export function useFaceWatch(faceId, {
   let lastFire = 0
   let lastLabel = null
   let lastRecogAt = 0
+  const ms = (v) => (typeof v === 'function' ? v() : v)
 
   async function tick() {
     if (busy || !video || !video.videoWidth) return
@@ -41,6 +46,7 @@ export function useFaceWatch(faceId, {
 
       const big = det && det.box.width / video.videoWidth >= minFaceRatio
       const now = Date.now()
+      onTick?.(!!det, !!big)
 
       // Dev label: periodically recognise so the overlay shows who it sees.
       if (dev && big && recognize && now - lastRecogAt > 1500) {
@@ -50,7 +56,7 @@ export function useFaceWatch(faceId, {
 
       if (big) {
         if (!dwellStart) dwellStart = now
-        if (armed && now - dwellStart >= dwellMs && now - lastFire > cooldownMs) {
+        if (armed && now - dwellStart >= ms(dwellMs) && now - lastFire > ms(cooldownMs)) {
           armed = false
           lastFire = now
           const desc = await faceId.describe(video)
@@ -59,7 +65,7 @@ export function useFaceWatch(faceId, {
       } else {
         dwellStart = 0
         lastLabel = null
-        if (now - lastFire > cooldownMs) armed = true
+        if (now - lastFire > ms(cooldownMs)) armed = true
       }
     } catch {
       /* detection hiccup; ignore */
@@ -109,8 +115,8 @@ export function useFaceWatch(faceId, {
     timer = null
   }
   /** Let the watcher re-arm immediately once a flow finishes. */
-  function rearmAfter(ms = cooldownMs) {
-    lastFire = Date.now() - (cooldownMs - ms)
+  function rearmAfter(delay = ms(cooldownMs)) {
+    lastFire = Date.now() - (ms(cooldownMs) - delay)
     dwellStart = 0
   }
 

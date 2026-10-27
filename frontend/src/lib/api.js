@@ -55,8 +55,9 @@ export const api = {
     fd.append('frame', frameBlob, 'frame.jpg')
     return request('POST', '/api/photobooth/capture', { body: fd, isForm: true })
   },
-  enhance: (capture_id, prompt) =>
-    request('POST', '/api/photobooth/enhance', { body: { capture_id, prompt } }),
+  // style_index = an Admin style card; the server resolves its prompt.
+  enhance: (capture_id, prompt, style_index = null) =>
+    request('POST', '/api/photobooth/enhance', { body: { capture_id, prompt, style_index } }),
   applyFrame: (capture_id, use_enhanced = true) =>
     request('POST', '/api/photobooth/frame', { body: { capture_id, use_enhanced } }),
   print: (capture_id) =>
@@ -143,6 +144,11 @@ export const api = {
   getSettings: () => request('GET', '/api/settings', { admin: true }),
   saveSettings: (values) => request('PUT', '/api/settings', { body: values, admin: true }),
   voices: () => request('GET', '/api/settings/voices', { admin: true }),
+  // Live model list from a provider (kind = chat | image | tts | stt).
+  liveModels: (kind, provider) =>
+    request('GET', `/api/settings/models/${kind}/${encodeURIComponent(provider)}`, { admin: true }),
+  // Pre-generate welcome lines as MP3s (offline, no per-greeting token cost).
+  saveVoiceClips: (texts) => request('POST', '/api/ai/voice-clips', { body: { texts }, admin: true }),
   listUsers: () => request('GET', '/api/users', { admin: true }),
   addUser: (formData) => request('POST', '/api/users', { body: formData, admin: true, isForm: true }),
   updateUser: (id, body) => request('PUT', `/api/users/${id}`, { body, admin: true }),
@@ -163,6 +169,11 @@ export const api = {
     const fd = new FormData()
     fd.append('file', file)
     return request('POST', '/api/photobooth/frame-overlay', { body: fd, admin: true, isForm: true })
+  },
+  uploadStyleImage: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', '/api/photobooth/style-image', { body: fd, admin: true, isForm: true })
   },
   listBackgrounds: () => request('GET', '/api/photobooth/backgrounds', { admin: true }),
   uploadBackground: (file) => {
@@ -195,6 +206,13 @@ export const api = {
     fd.append('file', file)
     return request('POST', '/api/quiz/reward-image', { body: fd, admin: true, isForm: true })
   },
+  // Real-person video avatar clips (state = idle|talking|listening|thinking|wave)
+  uploadAvatarVideo: (state, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', `/api/settings/avatar-video/${state}`, { body: fd, admin: true, isForm: true })
+  },
+  deleteAvatarVideo: (state) => request('DELETE', `/api/settings/avatar-video/${state}`, { admin: true }),
   uploadWheelImage: (kind, file) => {
     const fd = new FormData()
     fd.append('file', file)

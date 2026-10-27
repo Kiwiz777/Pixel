@@ -5,12 +5,18 @@
  *  - Background layer (color / image / video / slideshow) from Admin.
  *  - Live camera via the BROWSER (getUserMedia) so it works on a laptop and on
  *    the Pi's Chromium. Capture grabs a frame client-side and uploads it.
- *  - Borderless EMO-style <BotFace/> reacting to conversation state.
+ *  - <BotFace/> avatar (robot / kid / receptionist / fox, from Admin) reacting
+ *    to conversation state.
+ *  - Auto-interact on a held face: "welcome" style waves + says one line;
+ *    "chat" style greets and starts a voice conversation.
  *  - "Capture Photo" + conditional "Talk to Me" controls.
  *  - /ws/events drives face-detected auto-interact (when the Pi runs OpenCV).
+ *  - Attract mode (Admin -> Kiosk): background only until a face is seen;
+ *    then the camera, avatar and buttons materialise. Back to background-only
+ *    after the session or when idle. The camera stays on, hidden, to watch.
  *  - Hidden admin access: type "admin" or 5-tap the top-right hot-corner (<3s).
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watchEffect, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import BotFace from '../components/BotFace.vue'
 import CaptureModal from '../components/CaptureModal.vue'
@@ -19,6 +25,7 @@ import DiagnosticsOverlay from '../components/DiagnosticsOverlay.vue'
 import QuizModal from '../components/QuizModal.vue'
 import KioskBackground from '../components/KioskBackground.vue'
 import { api, wsUrl } from '../lib/api'
+import { applyFont } from '../lib/fonts'
 import { useBot } from '../composables/useBot'
 import { useCamera } from '../composables/useCamera'
 import { useSecretAccess } from '../composables/useSecretAccess'
@@ -56,6 +63,29 @@ const settings = ref({
   contact_form_enabled: true,
   diag_show_conversation: false,
   diag_show_ai_latency: false,
+  avatar_style: 'robot',
+  avatar_name: 'Pixel',
+  video_avatar: {},
+  video_avatar_shape: 'rounded',
+  video_avatar_scale: 1.6,
+  auto_interact_style: 'welcome',
+  welcome_messages: '',
+  welcome_back_messages: '',
+  welcome_speak: true,
+  welcome_voice_mode: 'live',
+  welcome_voice_clips: {},
+  greet_dwell_seconds: 2,
+  greet_cooldown_seconds: 20,
+  enhance_mode: 'prompt',
+  enhance_cards: [],
+  attract_mode_enabled: false,
+  attract_reveal_seconds: 1,
+  attract_idle_seconds: 20,
+  attract_return_after_session: true,
+  attract_rest_seconds: 8,
+  attract_review_idle_seconds: 45,
+  attract_tap_to_wake: true,
+  attract_hint: '',
 })
 const capture = ref(null)
 const capturing = ref(false)
@@ -78,6 +108,13 @@ const cropAspect = computed(() => printAspect.value || null)
 // camera's real shape - anything else makes `object-cover` crop the preview and
 // show a tighter shot than the one that actually prints.
 const stageAspect = computed(() => printAspect.value || cam.videoAspect.value || 16 / 9)
+
+// A real person on video needs more room than the drawn characters.
+const avatarSize = computed(() =>
+  settings.value.avatar_style === 'video'
+    ? Math.round(168 * Math.min(2.5, Math.max(1, Number(settings.value.video_avatar_scale) || 1.6)))
+    : 168,
+)
 
 // ---- photo frame overlay --------------------------------------------------
 const frameUrl = computed(() =>
@@ -109,8 +146,12 @@ const faceId = useFaceId()
 const { tapCorner } = useSecretAccess(() => router.push('/admin'))
 const faceWatch = useFaceWatch(faceId, {
   onTrigger: handleTrigger,
+  onTick: onPresence,
   recognize: (d) => recognizePeek(d),
   isDevMode: () => settings.value.dev_mode,
+  // Getters: Admin's timing applies to the running watcher.
+  dwellMs: () => Math.max(0.5, Number(settings.value.greet_dwell_seconds) || 2) * 1000,
+  cooldownMs: () => Math.max(5, Number(settings.value.greet_cooldown_seconds) || 20) * 1000,
 })
 
 let eventWs = null
@@ -135,11 +176,168 @@ function flashGreeting(text) {
   greetTimer = setTimeout(() => (greeting.value = ''), 6000)
 }
 
+// ---- attract mode ----------------------------------------------------------
+// Background only until someone steps up; then everything materialises.
+const attractOn = computed(() => !!settings.value.attract_mode_enabled)
+const awake = ref(false)
+// What the template keys off. A camera problem always reveals - otherwise the
+// guest could never see the "Enable camera" prompt.
+const revealed = computed(() => !attractOn.value || awake.value || !!cam.error.value)
+const wakeKey = ref(0) // restarts the scan-line sweep on each reveal
+const REVEAL_MS = 900 // length of the materialise animation
+let faceSince = 0 // start of the current run of frames with a close face
+let lastFaceAt = 0
+let lastTouchAt = 0
+let lastTapAt = 0 // real screen taps only (lastTouchAt also counts "busy")
+let restUntil = 0 // after a session, faces are ignored until this time
+let attractTimer = null
+
+const resting = () => Date.now() < restUntil
+
+function wake() {
+  if (!attractOn.value || awake.value) return
+  awake.value = true
+  wakeKey.value++
+  lastFaceAt = lastTouchAt = lastTapAt = Date.now()
+}
+
+/** Back to background only. `rest` = seconds to ignore faces afterwards. */
+function sleep({ rest = 0 } = {}) {
+  if (!attractOn.value || !awake.value) return
+  awake.value = false
+  restUntil = Date.now() + rest * 1000
+  faceSince = 0
+  greeting.value = ''
+  bot.resetConversation()
+  // The next guest should get a welcome even inside the greeting cooldown.
+  faceWatch.rearmAfter(0)
+}
+
+/** Every face-watch poll: reveal on a held face, track presence for idling. */
+function onPresence(seen, big) {
+  const now = Date.now()
+  if (seen) lastFaceAt = now
+  if (!attractOn.value || awake.value) return
+  if (!big || resting()) {
+    faceSince = 0
+    return
+  }
+  if (!faceSince) faceSince = now
+  if (now - faceSince >= Math.max(0, Number(settings.value.attract_reveal_seconds) || 0) * 1000) wake()
+}
+
+function attractIdleCheck() {
+  if (!attractOn.value || !awake.value) return
+  const now = Date.now()
+  // A guest who walked off mid-review: nobody taps the photo screen for a
+  // while, so the session ends on its own instead of waiting forever.
+  const reviewMs = Math.max(15, Number(settings.value.attract_review_idle_seconds) || 45) * 1000
+  if (capture.value && !showQuiz.value && !showContact.value && now - lastTapAt > reviewMs &&
+      bot.botState.value === 'idle' && !welcoming.value) {
+    onCaptureClosed()
+    return
+  }
+  const busy = guestBusy.value || welcoming.value || capturing.value || !!countdown.value ||
+    bot.isRecording() || bot.botState.value !== 'idle'
+  if (busy) {
+    lastTouchAt = now
+    return
+  }
+  const idleMs = Math.max(5, Number(settings.value.attract_idle_seconds) || 20) * 1000
+  if (now - Math.max(lastFaceAt, lastTouchAt) > idleMs) sleep()
+}
+
+/** A face trigger while asleep: reveal first, then let the greeting run. */
+async function wakeForGreeting() {
+  if (!attractOn.value || awake.value) return true
+  if (resting()) return false // the guest who just finished
+  wake()
+  await new Promise((r) => setTimeout(r, REVEAL_MS))
+  return true
+}
+
+// App-level chrome (the keyboard launcher) hides while only the background shows.
+watchEffect(() => document.body.classList.toggle('kiosk-asleep', !revealed.value))
+
+function onTapWake() {
+  if (settings.value.attract_tap_to_wake) {
+    restUntil = 0 // a deliberate tap always wins over the rest period
+    wake()
+  }
+}
+
+// ---- welcome-on-arrival ----------------------------------------------------
+const welcoming = ref(false) // avatar is waving hello
+// A guest already busy with something shouldn't be interrupted by a greeting.
+const guestBusy = computed(
+  () => inFlow.value || bot.conversing.value || !!capture.value || showQuiz.value || showContact.value,
+)
+const welcomeOnly = computed(() => settings.value.auto_interact_style !== 'chat')
+
+const linesOf = (text) => String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+
+/**
+ * Pick the welcome line, plus its saved voice clip if there is one.
+ * Saved-voice mode can only say lines that were pre-generated - so {name}
+ * lines (different per guest) drop out and a saved line is used instead.
+ */
+function chooseWelcome(name) {
+  const clips = settings.value.welcome_voice_clips || {}
+  const savedOnly = settings.value.welcome_speak && settings.value.welcome_voice_mode === 'saved'
+  const usable = (l) => !savedOnly || !!clips[l]
+  const back = name ? linesOf(settings.value.welcome_back_messages).filter(usable) : []
+  const pool = back.length ? back : linesOf(settings.value.welcome_messages).filter(usable)
+  const line = pool[Math.floor(Math.random() * pool.length)] || ''
+  const text = line.replaceAll('{name}', name || '').trim()
+  return {
+    text: text || (name ? `Welcome back, ${name}!` : 'Welcome!'),
+    clip: clips[line] || null,
+  }
+}
+
+function speakWelcome(text, clip) {
+  if (!settings.value.welcome_speak) return null
+  if (settings.value.welcome_voice_mode === 'saved') return clip ? bot.speak(text, { src: clip }) : null
+  return bot.speak(text, { fallbackSrc: clip })
+}
+
+/** Wave and say one welcome line. No mic, no LLM - a hello, not a chat. */
+async function welcomeGuest(name = null) {
+  if (welcoming.value) return
+  const { text, clip } = chooseWelcome(name)
+  bot.resetConversation() // a new arrival shouldn't see the last guest's chat
+  welcoming.value = true
+  flashGreeting(text)
+  try {
+    // Keep waving for at least a beat, even if TTS is off or fails fast.
+    await Promise.all([
+      speakWelcome(text, clip),
+      new Promise((r) => setTimeout(r, 2400)),
+    ])
+  } finally {
+    welcoming.value = false
+  }
+}
+
+async function welcomeFace(descriptor) {
+  let name = null
+  try {
+    const m = (await api.matchFace(descriptor)).match
+    if (m?.is_admin) return // recognised operator: no fanfare
+    name = m?.name || null
+  } catch {
+    /* match failed; generic welcome */
+  }
+  await welcomeGuest(name)
+}
+
 // ---- the structured recognition flow --------------------------------------
-// Triggered only after a face has been held in frame ~3s (see useFaceWatch).
+// Triggered only after a face has been held in frame (see useFaceWatch).
 async function handleTrigger(descriptor) {
-  if (inFlow.value || bot.conversing.value || capture.value) return
+  if (guestBusy.value || welcoming.value) return
   if (!settings.value.auto_interact_mode) return
+  if (!(await wakeForGreeting())) return
+  if (welcomeOnly.value) return welcomeFace(descriptor)
   inFlow.value = true
   try {
     let matched = null
@@ -270,9 +468,11 @@ function connectEvents() {
 }
 
 async function onServerFace(data) {
-  if (inFlow.value || bot.conversing.value || capture.value) return
+  if (guestBusy.value || welcoming.value) return
   if (!settings.value.auto_interact_mode) return
   const name = data.identity && data.identity !== 'unknown' ? data.identity : null
+  if (!(await wakeForGreeting())) return
+  if (welcomeOnly.value) return welcomeGuest(name)
   inFlow.value = true
   try {
     flashGreeting(name ? `Hi ${name}!` : 'Hello there!')
@@ -351,6 +551,13 @@ async function onQuizReward(reward) {
 function onCaptureClosed() {
   capture.value = null
   rewardSession.value = null
+  if (attractOn.value) {
+    // The camera stays on in attract mode - it's how we spot the next guest.
+    if (settings.value.attract_return_after_session) {
+      sleep({ rest: Math.max(0, Number(settings.value.attract_rest_seconds) || 0) })
+    }
+    return
+  }
   // On-demand camera: power the webcam back down once the session ends.
   if (settings.value.camera_off_after_session) stopCamera()
 }
@@ -370,12 +577,14 @@ function stopCamera() {
 
 // Reset the inactivity countdown; turn the camera off after N idle seconds.
 function markActivity() {
+  lastTouchAt = lastTapAt = Date.now()
   if (idleTimer) clearTimeout(idleTimer)
+  if (attractOn.value) return // attract mode idles to background, never camera-off
   const secs = Number(settings.value.camera_idle_off_seconds) || 0
   if (secs > 0 && cam.active.value) {
     idleTimer = setTimeout(() => {
       // Never kill the camera mid-conversation or mid-capture.
-      if (bot.conversing.value || bot.isRecording() || inFlow.value || capture.value) {
+      if (bot.conversing.value || bot.isRecording() || inFlow.value || welcoming.value || capture.value) {
         markActivity()
       } else {
         stopCamera()
@@ -440,11 +649,14 @@ onMounted(async () => {
   } catch {
     /* keep defaults */
   }
+  applyFont(settings.value.ui_font)
   // Auto-start the camera up front unless the admin turned it off (e.g. a
   // quiz-first kiosk that leads with the buttons and starts the camera on demand).
-  if (settings.value.kiosk_camera_autostart) {
+  // Attract mode needs the camera watching from the start, even though it's hidden.
+  if (settings.value.kiosk_camera_autostart || attractOn.value) {
     await startCamera()
   }
+  attractTimer = setInterval(attractIdleCheck, 1000)
   connectEvents()
   window.addEventListener('pointerdown', markActivity)
 })
@@ -457,6 +669,8 @@ onBeforeUnmount(() => {
   faceWatch.stop()
   clearTimeout(greetTimer)
   if (idleTimer) clearTimeout(idleTimer)
+  clearInterval(attractTimer)
+  document.body.classList.remove('kiosk-asleep')
   cancelCountdown()
   window.removeEventListener('pointerdown', markActivity)
 })
@@ -479,6 +693,23 @@ onBeforeUnmount(() => {
       aria-hidden="true" tabindex="-1" @click="tapCorner"
     ></button>
 
+    <!-- attract mode: tap anywhere to wake (admin hot-corner stays on top) -->
+    <button
+      v-if="!revealed && settings.attract_tap_to_wake"
+      class="fixed inset-0 z-30 cursor-default"
+      aria-label="Start the photobooth"
+      @click="onTapWake"
+    ></button>
+    <transition name="fade">
+      <p
+        v-if="!revealed && settings.attract_hint"
+        class="fixed inset-x-0 bottom-[12vh] z-20 text-center px-6 pointer-events-none"
+      ><span class="attract-hint font-display">{{ settings.attract_hint }}</span></p>
+    </transition>
+
+    <!-- reveal: a scan line sweeps the screen as everything powers on -->
+    <div v-if="attractOn && revealed && wakeKey" :key="wakeKey" class="scan-sweep" aria-hidden="true"></div>
+
     <!-- video stage -->
     <main class="relative z-10 min-h-dvh grid place-items-center px-4 py-6">
       <!-- With the camera on this is a framed viewfinder. With it off the panel
@@ -486,10 +717,15 @@ onBeforeUnmount(() => {
            full-area layer - the bot face and speech bubble still need somewhere
            to sit, they just sit on the kiosk background instead. -->
       <div
-        class="relative overflow-hidden"
-        :class="cam.active.value
-          ? 'mx-auto max-w-5xl rounded-3xl glass shadow-glass'
-          : 'absolute inset-0'"
+        class="holo overflow-hidden"
+        :class="[
+          // \`relative\` only in the viewfinder branch: Tailwind emits .relative
+          // after .absolute, so having both collapsed the camera-off layer to
+          // 0x0 and hid the avatar and speech bubble.
+          cam.active.value ? 'relative mx-auto max-w-5xl rounded-3xl glass shadow-glass' : 'absolute inset-0',
+          { 'holo-off': !revealed, 'holo-on': attractOn && revealed },
+        ]"
+        :aria-hidden="!revealed"
         :style="cam.active.value ? stageStyle : undefined"
       >
         <!-- browser camera feed (mirrored like a selfie) -->
@@ -555,21 +791,30 @@ onBeforeUnmount(() => {
         <!-- vignette (belongs to the viewfinder, not the bare background) -->
         <div v-if="cam.active.value" class="pointer-events-none absolute inset-0" style="background: radial-gradient(120% 80% at 50% 0%, transparent 60%, rgba(7,11,22,0.5) 100%)"></div>
 
-        <!-- floating EMO face -->
+        <!-- floating avatar (zooms in while waving hello) -->
         <!-- Sits higher with the camera off: the stage is full-screen then, so
              the bottom-right corner is where the control dock now lives. -->
         <div
           v-if="settings.bot_face_visible"
-          class="absolute right-4 sm:right-6 animate-float"
-          :class="cam.active.value ? 'bottom-4 sm:bottom-6' : 'bottom-44 sm:bottom-48'"
+          class="avatar-dock absolute right-4 sm:right-6 animate-float"
+          :class="[cam.active.value ? 'bottom-4 sm:bottom-6' : 'bottom-44 sm:bottom-48', { 'is-welcoming': welcoming }]"
         >
-          <BotFace :state="bot.botState.value" mood="happy" :size="168" />
+          <div :class="{ materialize: attractOn && revealed }">
+            <BotFace
+              :avatar="settings.avatar_style"
+              :state="bot.botState.value"
+              :waving="welcoming"
+              mood="happy"
+              :size="avatarSize"
+              :video="{ clips: settings.video_avatar, shape: settings.video_avatar_shape }"
+            />
+          </div>
         </div>
 
         <!-- speech bubble -->
         <transition name="bubble">
           <div v-if="greeting || bot.lastReply.value" class="absolute left-4 sm:left-6 bottom-6 max-w-sm glass-card px-4 py-3">
-            <p class="font-display text-sm text-electric-300">Pixel says</p>
+            <p class="font-display text-sm text-electric-300">{{ settings.avatar_name || 'Pixel' }} says</p>
             <p class="text-slate-100">{{ bot.lastReply.value || greeting }}</p>
           </div>
         </transition>
@@ -577,7 +822,11 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- control dock: always at the bottom, camera on or off -->
-    <footer class="absolute bottom-0 inset-x-0 z-20 px-4 pb-7 sm:pb-9 grid place-items-center">
+    <footer
+      class="dock absolute bottom-0 inset-x-0 z-20 px-4 pb-7 sm:pb-9 grid place-items-center"
+      :class="{ 'dock-off': !revealed, 'dock-on': attractOn && revealed }"
+      :aria-hidden="!revealed"
+    >
       <div class="grid place-items-center gap-4 w-full">
       <transition name="fade">
         <p v-if="!cam.active.value" class="font-display text-lg sm:text-xl text-slate-100 text-center px-6">
@@ -589,7 +838,7 @@ onBeforeUnmount(() => {
       <!-- Wraps: with quiz, contact and talk all enabled this is four large
            buttons (~880px), which overflows any screen narrower than a 1080
            portrait panel. -->
-      <div class="glass-card px-4 py-3 flex flex-wrap items-center justify-center gap-3 max-w-5xl mx-auto">
+      <div class="dock-panel glass-card px-4 py-3 flex flex-wrap items-center justify-center gap-3 max-w-5xl mx-auto">
         <button
           class="btn-primary text-lg px-7 py-4"
           :disabled="capturing || !!countdown"
@@ -657,6 +906,8 @@ onBeforeUnmount(() => {
       :reward="rewardSession"
       :aspect="stageAspect"
       :frame-url="frameInModal ? frameUrl : ''"
+      :enhance-mode="settings.enhance_mode"
+      :enhance-cards="settings.enhance_cards || []"
       @retake="capture = null"
       @close="onCaptureClosed"
       @printed="onCaptureClosed"
@@ -681,6 +932,13 @@ onBeforeUnmount(() => {
 .fade-leave-active { transition: opacity 0.15s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
+/* `scale` (not transform) so it composes with animate-float's translate. */
+.avatar-dock {
+  transform-origin: bottom right;
+  transition: scale 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.avatar-dock.is-welcoming { scale: 1.3; }
+
 /* Each countdown number punches in — :key on the element restarts it per tick,
    giving the beat a visible pulse instead of a silently changing glyph. */
 .countdown-pop {
@@ -693,7 +951,86 @@ onBeforeUnmount(() => {
   100% { opacity: 0.9; transform: scale(1); }
 }
 
+/* ---- attract mode: hologram power-on / power-down ---------------------- */
+.holo, .dock {
+  transition: opacity 0.6s ease, filter 0.6s ease, transform 0.6s ease;
+}
+.holo-off {
+  opacity: 0;
+  filter: blur(14px) brightness(1.8);
+  transform: scale(0.97);
+  pointer-events: none;
+}
+/* A bright line opens into the full viewfinder, with a flicker as it locks. */
+.holo-on { animation: holo-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+@keyframes holo-in {
+  0% { opacity: 0; clip-path: inset(49.6% 0 49.6% 0); filter: brightness(2.4) saturate(0); }
+  30% { opacity: 1; clip-path: inset(49.6% 0 49.6% 0); filter: brightness(2.2) saturate(0.2); }
+  70% { clip-path: inset(0 0 0 0); filter: brightness(1.3) saturate(0.8); }
+  80% { opacity: 0.7; }
+  88% { opacity: 1; }
+  100% { clip-path: inset(0 0 0 0); filter: none; opacity: 1; }
+}
+.materialize { animation: materialize 1s cubic-bezier(0.16, 1, 0.3, 1) 0.45s backwards; }
+@keyframes materialize {
+  0% { opacity: 0; transform: translateY(18px) scale(0.85); filter: blur(10px) hue-rotate(60deg) brightness(2); }
+  60% { opacity: 0.9; filter: blur(1px) hue-rotate(0) brightness(1.3); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+.dock-off {
+  opacity: 0;
+  transform: translateY(40px);
+  filter: blur(8px);
+  pointer-events: none;
+}
+.dock-on .dock-panel { animation: dock-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.55s backwards; }
+.dock-on .dock-panel > * { animation: dock-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards; }
+.dock-on .dock-panel > :nth-child(1) { animation-delay: 0.75s; }
+.dock-on .dock-panel > :nth-child(2) { animation-delay: 0.83s; }
+.dock-on .dock-panel > :nth-child(3) { animation-delay: 0.91s; }
+.dock-on .dock-panel > :nth-child(4) { animation-delay: 0.99s; }
+@keyframes dock-rise {
+  from { opacity: 0; transform: translateY(40px); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes dock-pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+.scan-sweep {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  z-index: 40;
+  pointer-events: none;
+  background: #7df0ff;
+  box-shadow: 0 0 18px 4px rgb(56 189 248 / 0.8), 0 -60px 80px 10px rgb(56 189 248 / 0.12);
+  animation: sweep 1s cubic-bezier(0.45, 0, 0.2, 1) forwards;
+}
+@keyframes sweep {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(100dvh); opacity: 0; }
+}
+.attract-hint {
+  display: inline-block;
+  font-size: clamp(1.1rem, 2.4vw, 1.75rem);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: #e0f7ff;
+  text-shadow: 0 0 18px rgb(56 189 248 / 0.7);
+  animation: hint-breathe 3.2s ease-in-out infinite;
+}
+@keyframes hint-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .countdown-pop { animation: none; }
+  .holo-on, .materialize, .dock-on .dock-panel, .dock-on .dock-panel > *, .attract-hint { animation: none; }
+  .scan-sweep { display: none; }
 }
 </style>

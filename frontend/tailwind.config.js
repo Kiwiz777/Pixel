@@ -19,9 +19,10 @@ export default {
           950: '#070B16', 900: '#0B1020', 850: '#0F1629', 800: '#141C30', 700: '#1E283F',
         },
       },
+      // Switchable font sets: the variables come from src/fonts.css.
       fontFamily: {
-        display: ['Fredoka', 'system-ui', 'sans-serif'],
-        sans: ['Nunito', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-body)', 'system-ui', 'sans-serif'],
       },
       borderRadius: { xl2: '1.25rem', '3xl': '1.75rem' },
       boxShadow: {

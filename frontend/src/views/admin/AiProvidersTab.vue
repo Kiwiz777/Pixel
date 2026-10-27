@@ -5,6 +5,7 @@
  * ElevenLabs voice picker.
  */
 import { reactive, ref, watch, computed } from 'vue'
+import ModelPicker from './ModelPicker.vue'
 
 const props = defineProps({ settings: Object, providers: Object })
 const emit = defineEmits(['save'])
@@ -49,8 +50,9 @@ watch(
   { immediate: true, deep: true },
 )
 
-const chatModels = computed(() => props.providers?.chat?.[form.active_chat_provider]?.models || [])
-const imageModels = computed(() => props.providers?.image?.[form.active_image_provider]?.models || [])
+const chatInfo = computed(() => props.providers?.chat?.[form.active_chat_provider] || {})
+const imageInfo = computed(() => props.providers?.image?.[form.active_image_provider] || {})
+
 
 function isSet(key) {
   return props.settings?.[`${key}__set`]
@@ -122,28 +124,33 @@ function save() {
         <h2 class="font-display text-lg font-semibold mb-1">Chat Brain</h2>
         <p class="hint !mt-0 mb-4">Which LLM answers guests.</p>
         <label class="label" for="chatprov">Provider</label>
-        <select id="chatprov" v-model="form.active_chat_provider" class="field mb-3">
+        <!-- Switching provider: the old model id means nothing to the new one. -->
+        <select id="chatprov" v-model="form.active_chat_provider" class="field mb-3" @change="form.active_chat_model = ''">
           <option v-for="(p, id) in providers.chat" :key="id" :value="id">{{ p.label }}</option>
         </select>
         <label class="label" for="chatmodel">Model</label>
-        <select id="chatmodel" v-model="form.active_chat_model" class="field">
-          <option value="">Provider default</option>
-          <option v-for="m in chatModels" :key="m" :value="m">{{ m }}</option>
-        </select>
+        <ModelPicker
+          id="chatmodel" v-model="form.active_chat_model" kind="chat"
+          :provider="form.active_chat_provider" :provider-label="chatInfo.label"
+          :builtin="chatInfo.models || []" allow-default
+          :default-label="`Provider default (${chatInfo.default_model || '—'})`"
+        />
       </div>
 
       <div class="glass-card p-5 sm:p-6">
         <h2 class="font-display text-lg font-semibold mb-1">Image Enhance</h2>
         <p class="hint !mt-0 mb-4">Which model runs "AI Enhance".</p>
         <label class="label" for="imgprov">Provider</label>
-        <select id="imgprov" v-model="form.active_image_provider" class="field mb-3">
+        <select id="imgprov" v-model="form.active_image_provider" class="field mb-3" @change="form.active_image_model = ''">
           <option v-for="(p, id) in providers.image" :key="id" :value="id">{{ p.label }}</option>
         </select>
         <label class="label" for="imgmodel">Model</label>
-        <select id="imgmodel" v-model="form.active_image_model" class="field">
-          <option value="">Provider default</option>
-          <option v-for="m in imageModels" :key="m" :value="m">{{ m }}</option>
-        </select>
+        <ModelPicker
+          id="imgmodel" v-model="form.active_image_model" kind="image"
+          :provider="form.active_image_provider" :provider-label="imageInfo.label"
+          :builtin="imageInfo.models || []" allow-default
+          :default-label="`Provider default (${imageInfo.default_model || '—'})`"
+        />
       </div>
     </div>
 
@@ -167,9 +174,10 @@ function save() {
       <div v-if="form.tts_provider === 'openai'" class="grid sm:grid-cols-2 gap-4">
         <div>
           <label class="label" for="otmodel">Model</label>
-          <select id="otmodel" v-model="form.openai_tts_model" class="field">
-            <option v-for="m in OPENAI_TTS_MODELS" :key="m" :value="m">{{ m }}</option>
-          </select>
+          <ModelPicker
+            id="otmodel" v-model="form.openai_tts_model" kind="tts"
+            provider="openai" provider-label="OpenAI" :builtin="OPENAI_TTS_MODELS"
+          />
         </div>
         <div>
           <label class="label" for="otvoice">Voice</label>
@@ -199,9 +207,10 @@ function save() {
       <div class="grid sm:grid-cols-2 gap-4">
         <div>
           <label class="label" for="sttmodel">Transcription model</label>
-          <select id="sttmodel" v-model="form.stt_model" class="field" aria-describedby="sttmodel-hint">
-            <option v-for="m in STT_MODELS" :key="m" :value="m">{{ m }}</option>
-          </select>
+          <ModelPicker
+            id="sttmodel" v-model="form.stt_model" kind="stt"
+            provider="openai" provider-label="OpenAI" :builtin="STT_MODELS"
+          />
           <p id="sttmodel-hint" class="hint mt-1">
             <template v-if="form.stt_model === 'whisper-1'">
               Legacy model. Higher error rate on dialect speech, but the only one
