@@ -129,7 +129,16 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
 
       <!-- Not installed -->
       <div v-if="wa && !wa.available">
-        <p class="text-slate-200">WhatsApp support isn't installed on this device.</p>
+        <template v-if="wa.error && !wa.error.includes(`No module named 'neonize'`)">
+          <p class="text-slate-200">neonize is installed but couldn't load:</p>
+          <p class="hint font-mono text-red-300 break-words">{{ wa.error }}</p>
+          <p class="hint mt-2">
+            On the compiled Pi build this is usually its WhatsApp library, which is downloaded on first use and
+            can't be fetched by the locked-down service. Fetch it once as root, then restart:
+            <code class="text-electric-300">sudo python3 -c 'import neonize.client' &amp;&amp; sudo systemctl restart pixel</code>
+          </p>
+        </template>
+        <p v-else class="text-slate-200">WhatsApp support isn't installed on this device.</p>
         <p class="hint">
           It needs the <span class="text-slate-200">neonize</span> Python package (64-bit Python only), installed into
           the same Python that runs the backend. Then restart the backend. <code>--reload</code> doesn't pick up new packages.
@@ -137,7 +146,7 @@ onBeforeUnmount(() => clearTimeout(pollTimer))
         <ul class="hint space-y-1 mt-2">
           <li>Windows dev: <code class="text-electric-300">backend\.venv\Scripts\python -m pip install neonize</code></li>
           <li>Pi from source: <code class="text-electric-300">.venv/bin/pip install -r requirements-pi.txt</code></li>
-          <li>Pi compiled build: <code class="text-electric-300">sudo pip3 install --break-system-packages neonize</code> (install_pi.sh does this)</li>
+          <li>Pi compiled build: <code class="text-electric-300">sudo pip3 install --break-system-packages neonize &amp;&amp; sudo python3 -c 'import neonize.client'</code> (install_pi.sh does this)</li>
         </ul>
       </div>
 

@@ -37,6 +37,18 @@ python3 -c 'import cups' 2>/dev/null || pip3 install --break-system-packages pyc
 # WhatsApp photo delivery (optional - the app just hides the option without it).
 python3 -c 'import neonize' 2>/dev/null || pip3 install --break-system-packages neonize \
   || echo "   (neonize install failed - WhatsApp sending will be unavailable)"
+# neonize downloads its Go library (neonize-linux-arm64.so) from GitHub into
+# its own package folder on FIRST IMPORT. The service can't do that: it runs
+# as `pixel` under ProtectSystem=strict, so /usr/local is read-only and the
+# import fails. Import it once here, as root, to fetch the library now.
+if python3 -c 'import importlib.util,sys; sys.exit(not importlib.util.find_spec("neonize"))' 2>/dev/null; then
+  if python3 -c 'import neonize.client' >/dev/null 2>&1; then
+    echo "   neonize OK ($(python3 -c 'import neonize; print(neonize.__version__)'))"
+  else
+    echo "   !! neonize is installed but won't load - WhatsApp will be unavailable:"
+    python3 -c 'import neonize.client' 2>&1 | tail -n 3 | sed 's/^/      /'
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Application bundle -> read-only, owned by root. The service user can

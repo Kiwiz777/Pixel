@@ -165,7 +165,10 @@ cd frontend && npm run dev      # http://localhost:5173
   install_pi.sh + pixel.service `ReadWritePaths`.
 - Compiled Pi build (Nuitka) excludes native extras (`--nofollow-import-to` cv2/cups/neonize);
   config.py adds `/usr/lib/python3/dist-packages` and `/usr/local/lib/python3.X/dist-packages`
-  to sys.path so pip-installed extras still import.
+  to sys.path so pip-installed extras still import. It also appends the system stdlib dirs
+  (stdlib modules only neonize uses aren't bundled). **neonize downloads its Go .so into its package
+  dir on first import** - the service (ProtectSystem=strict, user pixel) can't, so install_pi.sh
+  imports it once as root. Admin → WhatsApp shows the real import error (`NEONIZE_ERROR`).
 
 ## Conventions
 - Backend modules keep the exact names from the spec (vision/image_processor/printer/

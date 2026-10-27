@@ -71,6 +71,7 @@ echo "==> Compiling backend with Nuitka (this takes a while on a Pi)"
   --include-package=anyio \
   --include-package=h11 \
   --include-package=email.mime \
+  --include-module=ctypes.util \
   --nofollow-import-to=cv2 \
   --nofollow-import-to=face_recognition \
   --nofollow-import-to=dlib \

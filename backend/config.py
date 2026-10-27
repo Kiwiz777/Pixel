@@ -84,10 +84,20 @@ except OSError as _exc:  # read-only or unwritable state dir - fail loudly, not 
 if IS_COMPILED:
     # apt installs land in /usr/lib/python3/dist-packages, but
     # `pip install --break-system-packages` (pycups, neonize) lands in
-    # /usr/local/lib/python3.X/dist-packages - both must be searchable.
+    # /usr/local/lib/python3.X/dist-packages - both must be searchable, in
+    # the system interpreter's order (pip's newer protobuf etc. must win
+    # over an older apt copy).
+    #
+    # Last come the system stdlib dirs: neonize and its deps are not compiled
+    # in, so stdlib modules only THEY use (ctypes.util, zipfile, ...) are not
+    # in the bundle either. The build runs on this same interpreter, so they
+    # match; anything the bundle does have still wins because it's earlier.
+    _ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
     _default_extra = os.pathsep.join((
+        f"/usr/local/lib/{_ver}/dist-packages",
         "/usr/lib/python3/dist-packages",
-        f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/dist-packages",
+        f"/usr/lib/{_ver}",
+        f"/usr/lib/{_ver}/lib-dynload",
     ))
     for _p in os.getenv("PB_EXTRA_SITE_PACKAGES", _default_extra).split(os.pathsep):
         if _p and os.path.isdir(_p) and _p not in sys.path:

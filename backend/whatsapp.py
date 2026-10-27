@@ -49,8 +49,14 @@ try:  # optional native dependency (bundles a Go shared library)
     except Exception:  # pragma: no cover
         ChatPresence = ChatPresenceMedia = None  # type: ignore
     NEONIZE_AVAILABLE = True
-except Exception:  # pragma: no cover - not installed (e.g. 32-bit dev box)
+    NEONIZE_ERROR: str | None = None
+except Exception as _exc:  # pragma: no cover - not installed (e.g. 32-bit dev box)
     NEONIZE_AVAILABLE = False
+    # Keep the real reason: "installed but its Go library won't load" looks
+    # exactly like "not installed" otherwise.
+    NEONIZE_ERROR = f"{type(_exc).__name__}: {_exc}"
+    if not isinstance(_exc, ModuleNotFoundError) or _exc.name != "neonize":
+        log.warning("neonize is installed but failed to import: %s", NEONIZE_ERROR)
 
 try:  # QR -> SVG for the Admin pairing screen (pure Python, tiny)
     import segno
@@ -113,7 +119,7 @@ class WhatsAppService:
         self._lock = threading.Lock()
         self.state = "unavailable" if not NEONIZE_AVAILABLE else "stopped"
         self.qr: str | None = None
-        self.error: str | None = None
+        self.error: str | None = NEONIZE_ERROR
         self.me: str | None = None
         # Set by sharing.bind_loop: (text, chat_jid, sender_key) -> None.
         # The ONLY thing incoming messages are used for is spotting photo codes.
