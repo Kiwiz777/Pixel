@@ -81,7 +81,18 @@ journalctl -u photobooth -f
 The backend serves the built SPA at `http://<pi>:8000/` (kiosk) and `/admin`.
 
 ## 5. Kiosk autostart (Chromium full-screen)
-`/home/pi/.config/autostart/photobooth-kiosk.desktop`:
+Run as the desktop user (not sudo; `deploy_pi.sh` does this for compiled builds):
+```bash
+bash deploy/install_kiosk_desktop.sh            # add --no-autostart to skip starting at login
+```
+This installs `~/.local/bin/pixel-kiosk` (from `deploy/pixel-kiosk.sh`), a **Start Pixel Kiosk**
+desktop icon + app-menu entry, and login autostart. To leave the kiosk, tap the top-left corner
+5 times within 3s → **Staff menu → Close kiosk**. The launcher polls `/api/kiosk/exit` and closes
+Chromium (a page can't close a `--kiosk` browser, and the backend's `pixel` user can't kill it).
+Only a request from the Pi itself is accepted. Double-click the icon to start it again.
+
+The old hand-made autostart below is what the launcher replaces - the installer renames it to
+`.bak` so you don't get two kiosks. `/home/pi/.config/autostart/photobooth-kiosk.desktop`:
 ```ini
 [Desktop Entry]
 Type=Application

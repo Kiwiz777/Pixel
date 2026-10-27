@@ -10,6 +10,7 @@
 #   1. backend/build_pi.sh    - compile the frontend + backend (Nuitka)
 #   2. backend/smoke_test.sh  - boot the binary and check it actually works
 #   3. deploy/install_pi.sh   - install/replace the `pixel` systemd service
+#   4. deploy/install_kiosk_desktop.sh - "Start Pixel Kiosk" icon + autostart
 #
 # Each step is a real, independently-runnable script (see docs/BUILD.md for
 # what they do and why) - this is just the glue so you don't have to.
@@ -47,23 +48,26 @@ fi
 PYTHON="${PYTHON:-python3}"
 
 if [ "$SKIP_PREREQS" -eq 0 ]; then
-  echo "==> Step 0/3: one-time build prerequisites"
+  echo "==> Step 0/4: one-time build prerequisites"
   sudo apt update
   sudo apt install -y python3-dev build-essential patchelf ccache nodejs npm
   "$PYTHON" -m pip install --break-system-packages --upgrade nuitka
   "$PYTHON" -m pip install --break-system-packages -r "$ROOT/backend/requirements.txt"
 else
-  echo "==> Step 0/3: skipped (--skip-prereqs)"
+  echo "==> Step 0/4: skipped (--skip-prereqs)"
 fi
 
-echo "==> Step 1/3: build (backend/build_pi.sh)"
+echo "==> Step 1/4: build (backend/build_pi.sh)"
 PYTHON="$PYTHON" bash "$ROOT/backend/build_pi.sh"
 
-echo "==> Step 2/3: smoke test (backend/smoke_test.sh)"
+echo "==> Step 2/4: smoke test (backend/smoke_test.sh)"
 bash "$ROOT/backend/smoke_test.sh"
 
-echo "==> Step 3/3: install as the 'pixel' systemd service (deploy/install_pi.sh)"
+echo "==> Step 3/4: install as the 'pixel' systemd service (deploy/install_pi.sh)"
 sudo bash "$HERE/install_pi.sh" "$ROOT/backend/build/run.dist"
+
+echo "==> Step 4/4: kiosk launcher + desktop icon (deploy/install_kiosk_desktop.sh)"
+bash "$HERE/install_kiosk_desktop.sh"
 
 echo
 echo "==> Deployed. Kiosk: http://$(hostname -I | awk '{print $1}'):8000"

@@ -91,6 +91,12 @@ cd frontend && npm run dev      # http://localhost:5173
   404s → blank page. (This was the "blank admin after login" bug.)
 - **No nav bar on the kiosk.** Admin is reached via a hidden gesture (`useSecretAccess.js`):
   type `admin` or 5-tap the invisible top-right hot-corner, both within 3s → `/admin`.
+  5-tap the top-LEFT corner → staff menu (`KioskExitMenu.vue`): Close kiosk / fullscreen toggle.
+- **Closing the --kiosk browser**: a page can't, and the `pixel` service user can't kill the
+  desktop user's Chromium. `deploy/pixel-kiosk.sh` (desktop user, own Chromium profile, single
+  instance) polls `GET /api/kiosk/exit` and closes Chromium when `requested_at` > its own start.
+  `POST` is loopback-only; state is in-memory so a backend restart can't close a fresh kiosk.
+  `install_kiosk_desktop.sh` (deploy_pi.sh step 4) adds a "Start Pixel Kiosk" icon + autostart.
 - Static media: `/media/{captures,frames,faces,backgrounds}`. Kiosk background (color/image/
   video/slideshow) is configured in **Admin → Kiosk** and read from `/api/settings/public`.
 - **Avatars**: `BotFace.vue` is a shell (halo, ripples, thinking dots, welcome hop) around one

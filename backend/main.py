@@ -26,7 +26,7 @@ import printer as printer_service
 import sharing
 import vision
 import whatsapp
-from routers import ai, contacts, logs, photobooth, printer, quiz, settings, share, users
+from routers import ai, contacts, kiosk, logs, photobooth, printer, quiz, settings, share, users
 
 
 @contextlib.asynccontextmanager
@@ -66,6 +66,7 @@ app.include_router(ai.router)
 app.include_router(quiz.router)
 app.include_router(contacts.router)
 app.include_router(share.router)
+app.include_router(kiosk.router)
 
 # Static media (captures + uploaded frames + face refs)
 app.mount("/media/captures", StaticFiles(directory=config.CAPTURES_DIR), name="captures")

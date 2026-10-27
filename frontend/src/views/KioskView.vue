@@ -15,6 +15,7 @@
  *    then the camera, avatar and buttons materialise. Back to background-only
  *    after the session or when idle. The camera stays on, hidden, to watch.
  *  - Hidden admin access: type "admin" or 5-tap the top-right hot-corner (<3s).
+ *  - Hidden staff menu (close kiosk / fullscreen): 5-tap the top-left hot-corner (<3s).
  */
 import { ref, computed, watchEffect, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
@@ -24,11 +25,12 @@ import ContactModal from '../components/ContactModal.vue'
 import DiagnosticsOverlay from '../components/DiagnosticsOverlay.vue'
 import QuizModal from '../components/QuizModal.vue'
 import KioskBackground from '../components/KioskBackground.vue'
+import KioskExitMenu from '../components/KioskExitMenu.vue'
 import { api, wsUrl } from '../lib/api'
 import { applyFont } from '../lib/fonts'
 import { useBot } from '../composables/useBot'
 import { useCamera } from '../composables/useCamera'
-import { useSecretAccess } from '../composables/useSecretAccess'
+import { useSecretAccess, tapCounter } from '../composables/useSecretAccess'
 import { useFaceId } from '../composables/useFaceId'
 import { useFaceWatch } from '../composables/useFaceWatch'
 
@@ -144,6 +146,8 @@ const bot = useBot()
 const cam = useCamera()
 const faceId = useFaceId()
 const { tapCorner } = useSecretAccess(() => router.push('/admin'))
+const showStaffMenu = ref(false)
+const tapStaffCorner = tapCounter(() => (showStaffMenu.value = true))
 const faceWatch = useFaceWatch(faceId, {
   onTrigger: handleTrigger,
   onTick: onPresence,
@@ -692,6 +696,11 @@ onBeforeUnmount(() => {
       class="fixed top-0 right-0 h-16 w-16 z-50 opacity-0"
       aria-hidden="true" tabindex="-1" @click="tapCorner"
     ></button>
+    <!-- hidden hot-corner for the staff menu (top-left): close kiosk / fullscreen. Tap 5× in 3s. -->
+    <button
+      class="fixed top-0 left-0 h-16 w-16 z-50 opacity-0"
+      aria-hidden="true" tabindex="-1" @click="tapStaffCorner"
+    ></button>
 
     <!-- attract mode: tap anywhere to wake (admin hot-corner stays on top) -->
     <button
@@ -893,6 +902,8 @@ onBeforeUnmount(() => {
     />
 
     <!-- contact us -->
+    <KioskExitMenu v-if="showStaffMenu" @close="showStaffMenu = false" />
+
     <ContactModal
       v-if="showContact"
       :language="settings.default_language"

@@ -48,6 +48,8 @@ export const api = {
 
   // Kiosk (public)
   publicSettings: () => request('GET', '/api/settings/public'),
+  // Ask the desktop launcher (deploy/pixel-kiosk.sh) to close the kiosk browser.
+  kioskExit: () => request('POST', '/api/kiosk/exit'),
   // If `frameBlob` is provided (browser camera), send it; else server grabs.
   capture: (frameBlob) => {
     if (!frameBlob) return request('POST', '/api/photobooth/capture')
