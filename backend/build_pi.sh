@@ -56,6 +56,9 @@ fi
 #    dlib for ARM is fragile and buys nothing - they are public open source.
 #    They stay in the Pi's system Python; config.py re-adds that directory to
 #    sys.path so the guarded imports in vision.py / printer.py still resolve.
+#    --no-deployment-flag=excluded-module-usage is REQUIRED for that: by
+#    default Nuitka makes importing an excluded module raise ImportError
+#    ("actively excluded from Nuitka compilation") even when it's on sys.path.
 # ---------------------------------------------------------------------------
 echo "==> Compiling backend with Nuitka (this takes a while on a Pi)"
 "$PYTHON" -m nuitka \
@@ -79,6 +82,7 @@ echo "==> Compiling backend with Nuitka (this takes a while on a Pi)"
   --nofollow-import-to=cups \
   --nofollow-import-to=neonize \
   --nofollow-import-to=tkinter \
+  --no-deployment-flag=excluded-module-usage \
   --enable-plugin=anti-bloat \
   --assume-yes-for-downloads \
   run.py

@@ -93,9 +93,11 @@ cd frontend && npm run dev      # http://localhost:5173
   type `admin` or 5-tap the invisible top-right hot-corner, both within 3s → `/admin`.
   5-tap the top-LEFT corner → staff menu (`KioskExitMenu.vue`): Close kiosk / fullscreen toggle.
 - **Closing the --kiosk browser**: a page can't, and the `pixel` service user can't kill the
-  desktop user's Chromium. `deploy/pixel-kiosk.sh` (desktop user, own Chromium profile, single
-  instance) polls `GET /api/kiosk/exit` and closes Chromium when `requested_at` > its own start.
-  `POST` is loopback-only; state is in-memory so a backend restart can't close a fresh kiosk.
+  desktop user's Chromium. `POST /api/kiosk/exit` (loopback-only) touches `DATA_DIR/kiosk-close`;
+  root's `pixel-kiosk-close.path` → `.service` runs `pkill -u <desktop user> -f chrom.*--kiosk`
+  (install_pi.sh installs both). From source, `deploy/pixel-kiosk.sh` instead polls
+  `GET /api/kiosk/exit` and closes its Chromium when `requested_at` > its start (in-memory, so a
+  backend restart can't close a fresh kiosk).
   `install_kiosk_desktop.sh` (deploy_pi.sh step 4) adds a "Start Pixel Kiosk" icon + autostart.
 - Static media: `/media/{captures,frames,faces,backgrounds}`. Kiosk background (color/image/
   video/slideshow) is configured in **Admin → Kiosk** and read from `/api/settings/public`.

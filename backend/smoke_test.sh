@@ -89,6 +89,10 @@ check "GET /api/settings/public" \
 # 6. Graceful degradation survived: optional natives resolve or degrade, but
 #    never crash the app.
 echo "  INFO  health: $(curl -s "$BASE/api/health")"
+#    Nuitka must not block the excluded extras (cv2, cups, neonize...) from
+#    loading out of the system Python - see --no-deployment-flag in build_pi.sh.
+check "excluded extras are importable (no Nuitka block)" \
+  "$(grep -c 'actively excluded from Nuitka' "$STATE/log" || true)" "0"
 
 echo
 if [ "$FAILED" -eq 0 ]; then

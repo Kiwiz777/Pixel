@@ -1,0 +1,15 @@
+#
+# Watches for "Close kiosk" from the kiosk's hidden staff menu (5 taps,
+# top-left). The backend (user `pixel`, NoNewPrivileges) can't kill the desktop
+# user's Chromium, so it touches this file and root does it instead via
+# pixel-kiosk-close.service. Installed by install_pi.sh.
+#
+[Unit]
+Description=Watch for Pixel kiosk close requests
+
+[Path]
+PathChanged=/var/lib/pixel/kiosk-close
+Unit=pixel-kiosk-close.service
+
+[Install]
+WantedBy=multi-user.target

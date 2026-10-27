@@ -109,6 +109,20 @@ cp "$(dirname "$0")/pixel.service" /etc/systemd/system/pixel.service
 systemctl daemon-reload
 systemctl enable --now pixel
 
+# "Close kiosk" (staff menu): the backend touches $STATE_DIR/kiosk-close and
+# root kills the --kiosk Chromium - see pixel-kiosk-close.path. Scoped to the
+# desktop user that ran this install when we know who that is.
+echo "==> Installing kiosk close watcher"
+KIOSK_USER_ARG=""
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+  KIOSK_USER_ARG="-u $SUDO_USER"
+fi
+sed "s/@KIOSK_USER_ARG@/$KIOSK_USER_ARG/" "$(dirname "$0")/pixel-kiosk-close.service" \
+  >/etc/systemd/system/pixel-kiosk-close.service
+cp "$(dirname "$0")/pixel-kiosk-close.path" /etc/systemd/system/pixel-kiosk-close.path
+systemctl daemon-reload
+systemctl enable --now pixel-kiosk-close.path
+
 sleep 2
 systemctl --no-pager --lines=15 status pixel || true
 echo

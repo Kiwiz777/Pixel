@@ -1,8 +1,8 @@
 <script setup>
 /**
- * Staff-only menu behind the hidden top-left hot-corner (5 taps). Closing the
- * kiosk needs the desktop launcher (deploy/pixel-kiosk.sh): a page can't close
- * a --kiosk Chromium itself. Fullscreen here is the page's own (Fullscreen
+ * Staff-only menu behind the hidden top-left hot-corner (5 taps). A page can't
+ * close a --kiosk Chromium itself: POST /api/kiosk/exit and root's
+ * pixel-kiosk-close.path (or the dev launcher) does it. Fullscreen here is the page's own (Fullscreen
  * API) - it can't undo --kiosk or F11 either. Dismisses itself if left alone.
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
@@ -15,6 +15,7 @@ const busy = ref(false)
 const msg = ref('')
 const isFullscreen = ref(!!document.fullscreenElement)
 let idle = null
+let notClosed = null
 
 function armIdle() {
   clearTimeout(idle)
@@ -26,10 +27,13 @@ async function closeKiosk() {
   msg.value = ''
   armIdle()
   try {
-    const res = await api.kioskExit()
-    msg.value = res.launcher
-      ? 'Closing the kiosk… Use “Start Pixel Kiosk” on the desktop to open it again.'
-      : 'The kiosk launcher isn’t running, so this screen can’t close itself. Press Alt+F4 to close the browser.'
+    await api.kioskExit()
+    msg.value = 'Closing the kiosk… Use “Start Pixel Kiosk” on the desktop to open it again.'
+    // Still here = nothing closed the browser (close watcher not installed).
+    notClosed = setTimeout(() => {
+      msg.value = 'The kiosk didn’t close. Press Alt+F4, and re-run deploy/install_pi.sh to install the close watcher.'
+      armIdle()
+    }, 6000)
   } catch (e) {
     msg.value = e.message || 'Could not close the kiosk.'
   } finally {
@@ -49,6 +53,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   clearTimeout(idle)
+  clearTimeout(notClosed)
   document.removeEventListener('fullscreenchange', syncFs)
 })
 </script>

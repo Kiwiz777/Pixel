@@ -1,0 +1,12 @@
+#
+# Closes the kiosk browser. Started only by pixel-kiosk-close.path.
+# Matches Chromium processes started with --kiosk (old autostart or the
+# pixel-kiosk launcher alike); install_pi.sh fills in -u <desktop user> so it
+# can't touch anyone else's browser. Leading "-": no match isn't a failure.
+#
+[Unit]
+Description=Close the Pixel kiosk browser
+
+[Service]
+Type=oneshot
+ExecStart=-/usr/bin/pkill -TERM @KIOSK_USER_ARG@ -f chrom.*--kiosk
